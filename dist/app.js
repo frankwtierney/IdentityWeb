@@ -191,6 +191,7 @@
     filter: 'all',
     matchMode: 'both',
     placementMode: 'all',
+    networkView: 'local',
     selectedIdentityId: null,
     selectedOwnerEmail: null,
     selectedPeerEmail: null,
@@ -592,6 +593,23 @@
     );
   }
 
+  function departmentMatchesBetween(profileA, profileB) {
+    return matchesBetween(profileA, profileB, state.matchMode).filter(match =>
+      state.placementMode === 'all' ||
+      match.identityA.placement === state.placementMode ||
+      match.identityB.placement === state.placementMode
+    );
+  }
+
+  function departmentProfiles() {
+    const scopeOwner = currentProfile();
+    return allProfiles().filter(profile => {
+      if (state.filter === 'building' && profile.community !== scopeOwner.community) return false;
+      if (state.filter === 'instructor' && profile.instructor !== scopeOwner.instructor) return false;
+      return true;
+    });
+  }
+
   function graphAnchorProfile() {
     const email = normalizeEmail(state.graphFocusEmail || state.currentEmail);
     return allProfiles().find(profile => normalizeEmail(profile.email) === email) || currentProfile();
@@ -607,6 +625,9 @@
   function renderWeb() {
     const signedInProfile = currentProfile();
     const profile = graphAnchorProfile();
+    const isDepartment = state.networkView === 'department';
+    const departmentPeople = isDepartment ? departmentProfiles() : [];
+    const departmentEdges = isDepartment ? departmentConnections(departmentPeople) : [];
     const allMatchedPeers = filteredProfiles(profile)
       .map(peer => ({ peer, score: graphMatchesBetween(profile, peer).length }))
       .sort((a, b) => b.score - a.score || a.peer.firstName.localeCompare(b.peer.firstName))
@@ -617,25 +638,128 @@
     const isMyWeb = normalizeEmail(profile.email) === normalizeEmail(signedInProfile.email);
     const placementOwner = isMyWeb ? 'My' : `${esc(profile.firstName)}’s`;
     return shell(`<div class="explore-head">
-      <section class="screen-heading"><p class="eyebrow">${esc(profile.firstName)}’s local network · ${allMatchedPeers.length} connected CA${allMatchedPeers.length === 1 ? '' : 's'} · ${totalIdentityLinks} identity link${totalIdentityLinks === 1 ? '' : 's'}</p><h1>${isMyWeb ? 'Your identity web' : `${esc(profile.firstName)}’s identity web`}</h1><p>Tap a CA to center their network. Tap a connection line to compare. Each line may represent one or more identity connections.</p></section>
+      <section class="screen-heading"><p class="eyebrow">${isDepartment ? `Department network · ${departmentPeople.length} CAs · ${departmentEdges.length} connected pairs` : `${esc(profile.firstName)}’s local network · ${allMatchedPeers.length} connected CA${allMatchedPeers.length === 1 ? '' : 's'} · ${totalIdentityLinks} identity link${totalIdentityLinks === 1 ? '' : 's'}`}</p><h1>${isDepartment ? 'Campus Living identity web' : (isMyWeb ? 'Your identity web' : `${esc(profile.firstName)}’s identity web`)}</h1><p>${isDepartment ? 'See the larger web across Campus Living. Tap initials to open that CA’s focused network, or tap a line to compare two CAs.' : 'Tap a CA to center their network. Tap a connection line to compare. Each line may represent one or more identity connections.'}</p></section>
       <div class="graph-controls">
-        ${isMyWeb ? '' : '<button class="graph-return" type="button" data-action="return-my-web">Return to my web</button>'}
+        ${!isDepartment && !isMyWeb ? '<button class="graph-return" type="button" data-action="return-my-web">Return to my web</button>' : ''}
         <label><span class="sr-only">People shown</span><select data-input="graph-filter"><option value="all" ${state.filter === 'all' ? 'selected' : ''}>All Campus Living</option><option value="building" ${state.filter === 'building' ? 'selected' : ''}>My building</option><option value="instructor" ${state.filter === 'instructor' ? 'selected' : ''}>My class</option></select></label>
         <label><span class="sr-only">Connection type</span><select data-input="match-mode"><option value="both" ${state.matchMode === 'both' ? 'selected' : ''}>All connections</option><option value="exact" ${state.matchMode === 'exact' ? 'selected' : ''}>Exact identities</option><option value="dimension" ${state.matchMode === 'dimension' ? 'selected' : ''}>Shared dimensions</option></select></label>
       </div>
     </div>
-    <div class="graph-layer-filters" role="group" aria-label="Filter by ${esc(profile.firstName)}’s identity placement">
+    <div class="network-view-switch" role="group" aria-label="Choose network view">
+      <button class="network-view-button ${!isDepartment ? 'active' : ''}" type="button" data-action="network-view" data-value="local" aria-pressed="${!isDepartment}">My Network</button>
+      <button class="network-view-button ${isDepartment ? 'active' : ''}" type="button" data-action="network-view" data-value="department" aria-pressed="${isDepartment}">Department Web</button>
+    </div>
+    <div class="graph-layer-filters" role="group" aria-label="${isDepartment ? 'Filter department connections by identity placement' : `Filter by ${esc(profile.firstName)}’s identity placement`}">
       <button class="placement-chip ${state.placementMode === 'all' ? 'active' : ''}" type="button" data-action="placement-filter" data-value="all" aria-pressed="${state.placementMode === 'all'}">All identities</button>
-      <button class="placement-chip ${state.placementMode === 'visible' ? 'active' : ''}" type="button" data-action="placement-filter" data-value="visible" aria-pressed="${state.placementMode === 'visible'}">${placementOwner} outer identities</button>
-      <button class="placement-chip ${state.placementMode === 'hidden' ? 'active' : ''}" type="button" data-action="placement-filter" data-value="hidden" aria-pressed="${state.placementMode === 'hidden'}">${placementOwner} hidden identities</button>
+      <button class="placement-chip ${state.placementMode === 'visible' ? 'active' : ''}" type="button" data-action="placement-filter" data-value="visible" aria-pressed="${state.placementMode === 'visible'}">${isDepartment ? 'Outer identities' : `${placementOwner} outer identities`}</button>
+      <button class="placement-chip ${state.placementMode === 'hidden' ? 'active' : ''}" type="button" data-action="placement-filter" data-value="hidden" aria-pressed="${state.placementMode === 'hidden'}">${isDepartment ? 'Hidden identities' : `${placementOwner} hidden identities`}</button>
     </div>
     <section class="graph-panel" aria-label="Interactive identity web">
-      ${peers.length ? `<div class="graph-stage" data-graph-stage>${graphSvg(profile, peers)}</div>
+      ${(isDepartment ? departmentEdges.length : peers.length) ? `<div class="graph-stage" data-graph-stage>${isDepartment ? departmentGraphSvg(departmentPeople, departmentEdges) : graphSvg(profile, peers)}</div>
         <div class="graph-tools" aria-label="Graph controls"><button class="graph-tool" type="button" data-action="zoom-in" aria-label="Zoom in">+</button><button class="graph-tool" type="button" data-action="zoom-out" aria-label="Zoom out">−</button><button class="graph-tool" type="button" data-action="reset-graph" aria-label="Reset graph">↺</button></div>` : `<div class="graph-empty"><div><h2>No connections in this view yet</h2><p class="muted">Try another filter or connection type.</p><button class="btn" type="button" data-action="show-all">Show all connections</button></div></div>`}
-      ${hiddenPeerCount ? `<div class="graph-more"><strong>${hiddenPeerCount} more connected CA${hiddenPeerCount === 1 ? '' : 's'}</strong><span>Use the filters or recenter the web to explore them.</span></div>` : ''}
-      <div class="graph-legend"><span class="legend-item"><span class="line-sample exact"></span>At least one exact identity</span><span class="legend-item"><span class="line-sample dimension"></span>Shared dimension</span><span class="legend-item"><span class="person-key current"></span>Person in focus</span></div>
+      ${!isDepartment && hiddenPeerCount ? `<div class="graph-more"><strong>${hiddenPeerCount} more connected CA${hiddenPeerCount === 1 ? '' : 's'}</strong><span>Use the filters or recenter the web to explore them.</span></div>` : ''}
+      <div class="graph-legend"><span class="legend-item"><span class="line-sample exact"></span>At least one exact identity</span><span class="legend-item"><span class="line-sample dimension"></span>Shared dimension</span>${isDepartment ? '<span class="legend-item"><span class="person-key"></span>CA initials</span>' : '<span class="legend-item"><span class="person-key current"></span>Person in focus</span>'}</div>
     </section>
-    <div class="detail-panel"><strong>The rings are still here</strong><p class="small muted">Open My Ring to review visible and hidden placement, salience, and the details attached to each identity. The web stays people-only so connections remain readable.</p></div>`, { tabs: true, activeTab: 'web' });
+    <div class="detail-panel"><strong>The rings are still here</strong><p class="small muted">Open My Ring to review visible and hidden placement, salience, and the details attached to each identity. Both web views stay people-only so the larger patterns remain readable.</p></div>`, { tabs: true, activeTab: 'web' });
+  }
+
+  function departmentConnections(profiles) {
+    const edges = [];
+    for (let i = 0; i < profiles.length; i += 1) {
+      for (let j = i + 1; j < profiles.length; j += 1) {
+        const matches = departmentMatchesBetween(profiles[i], profiles[j]);
+        if (matches.length) edges.push({ source: i, target: j, matches });
+      }
+    }
+    return edges;
+  }
+
+  function departmentGraphSvg(profiles, edges) {
+    const mobile = window.innerWidth < 640;
+    const view = mobile ? { width: 420, height: 680, cx: 210, cy: 332, r: 20 } : { width: 900, height: 580, cx: 450, cy: 282, r: 22 };
+    const positions = departmentForceLayout(profiles, edges, view, mobile);
+    const lines = edges.map((edge, index) => {
+      const a = positions[edge.source];
+      const b = positions[edge.target];
+      const source = profiles[edge.source];
+      const target = profiles[edge.target];
+      const primary = edge.matches.find(match => match.type === 'exact') || edge.matches[0];
+      const lineType = edge.matches.some(match => match.type === 'exact') ? 'exact' : 'dimension';
+      const key = `${normalizeEmail(source.email)}|${normalizeEmail(target.email)}|${primary.identityA.id}|${primary.identityB.id}`;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const distance = Math.max(1, Math.hypot(dx, dy));
+      const bend = (index % 2 ? 1 : -1) * Math.min(13, distance * .035);
+      const nx = -dy / distance;
+      const ny = dx / distance;
+      const cx = (a.x + b.x) / 2 + nx * bend;
+      const cy = (a.y + b.y) / 2 + ny * bend;
+      const path = `M ${a.x} ${a.y} Q ${cx.toFixed(2)} ${cy.toFixed(2)}, ${b.x} ${b.y}`;
+      return `<g class="people-connection department-connection" data-action="connection-line" data-key="${esc(key)}" role="button" tabindex="0" aria-label="${edge.matches.length} identity connection${edge.matches.length === 1 ? '' : 's'} between ${esc(source.firstName)} and ${esc(target.firstName)}. Open comparison.">
+        <path class="connection-line ${lineType}" d="${path}"></path>
+        <path class="connection-hit" d="${path}"></path>
+      </g>`;
+    }).join('');
+    const people = profiles.map((profile, index) => departmentPerson(profile, positions[index], view.r)).join('');
+    return `<svg class="graph-svg department-graph" viewBox="0 0 ${view.width} ${view.height}" role="img" aria-labelledby="graph-title graph-desc">
+      <title id="graph-title">Campus Living department identity network</title>
+      <desc id="graph-desc">Every visible node is a CA, labeled by initials. Each line represents one or more identity connections between a pair of CAs.</desc>
+      <g id="network-layer" transform="translate(${state.graph.x} ${state.graph.y}) scale(${state.graph.scale})">${lines}${people}</g>
+    </svg>`;
+  }
+
+  function departmentPerson(profile, position, radius) {
+    return `<g class="department-person">
+      <g class="person-focus" data-action="focus-person" data-email="${esc(normalizeEmail(profile.email))}" role="button" tabindex="0" aria-label="Open ${esc(profile.firstName)} ${esc(profile.lastName)}’s focused network">
+        <circle class="person-core" cx="${position.x}" cy="${position.y}" r="${radius}"></circle>
+        <circle class="person-core-hit" cx="${position.x}" cy="${position.y}" r="${radius + 9}"></circle>
+        <text class="person-initials" x="${position.x}" y="${position.y}">${esc(initials(profile))}</text>
+      </g>
+      <title>${esc(profile.firstName)} ${esc(profile.lastName)} · ${esc(profile.community)}</title>
+    </g>`;
+  }
+
+  function departmentForceLayout(profiles, edges, view, mobile) {
+    const count = Math.max(1, profiles.length);
+    const orbit = Math.min(view.width, view.height) * (mobile ? .35 : .38);
+    const nodes = profiles.map((profile, index) => {
+      const angle = -Math.PI / 2 + index * (Math.PI * 2 / count);
+      const band = count > 14 ? .58 + (index % 3) * .21 : 1;
+      return { x: view.cx + Math.cos(angle) * orbit * band, y: view.cy + Math.sin(angle) * orbit * band, vx: 0, vy: 0 };
+    });
+    for (let step = 0; step < 150; step += 1) {
+      edges.forEach(edge => {
+        const a = nodes[edge.source], b = nodes[edge.target];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        const distance = Math.max(1, Math.hypot(dx, dy));
+        const target = mobile ? 112 : 132;
+        const pull = (distance - target) * .0028;
+        dx /= distance; dy /= distance;
+        a.vx += dx * pull; a.vy += dy * pull;
+        b.vx -= dx * pull; b.vy -= dy * pull;
+      });
+      for (let i = 0; i < nodes.length; i += 1) {
+        for (let j = i + 1; j < nodes.length; j += 1) {
+          const a = nodes[i], b = nodes[j];
+          let dx = b.x - a.x, dy = b.y - a.y;
+          const distance = Math.max(1, Math.hypot(dx, dy));
+          const minimum = view.r * 2 + (mobile ? 18 : 22);
+          const repel = 720 / (distance * distance) + Math.max(0, minimum - distance) * .075;
+          dx /= distance; dy /= distance;
+          a.vx -= dx * repel; a.vy -= dy * repel;
+          b.vx += dx * repel; b.vy += dy * repel;
+        }
+      }
+      nodes.forEach(node => {
+        node.vx += (view.cx - node.x) * .0008;
+        node.vy += (view.cy - node.y) * .0008;
+        node.vx *= .79; node.vy *= .79;
+        node.x += node.vx; node.y += node.vy;
+        node.x = Math.max(view.r + 16, Math.min(view.width - view.r - 16, node.x));
+        node.y = Math.max(view.r + 16, Math.min(view.height - view.r - 16, node.y));
+      });
+    }
+    return nodes.map(node => ({ x: +node.x.toFixed(2), y: +node.y.toFixed(2) }));
   }
 
   function graphSvg(profile, peers) {
@@ -1130,6 +1254,12 @@
       state.draft = clone(currentProfile());
       state.view = 'profile';
       render();
+    } else if (action === 'network-view') {
+      state.networkView = target.dataset.value === 'department' ? 'department' : 'local';
+      if (state.networkView === 'local' && !state.graphFocusEmail) state.graphFocusEmail = state.currentEmail;
+      state.graphIdentityFocus = null;
+      state.graph = { scale: 1, x: 0, y: 0 };
+      render(false);
     } else if (action === 'placement-filter') {
       state.placementMode = target.dataset.value;
       state.graphIdentityFocus = null;
@@ -1150,6 +1280,7 @@
         render();
       }
     } else if (action === 'focus-person') {
+      state.networkView = 'local';
       state.graphFocusEmail = target.dataset.email;
       state.graphIdentityFocus = null;
       state.graph = { scale: 1, x: 0, y: 0 };

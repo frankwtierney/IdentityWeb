@@ -324,6 +324,10 @@ input::placeholder { color: #788697; }
 .graph-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .graph-controls select { width: auto; min-height: 42px; padding: 8px 34px 8px 10px; font-size: .84rem; }
 .graph-return { min-height: 42px; padding: 8px 12px; border: 1px solid var(--blue); border-radius: 11px; background: var(--surface); color: var(--blue-dark); font-weight: 750; cursor: pointer; }
+.network-view-switch { display: inline-grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: -3px 0 14px; padding: 4px; border: 1px solid var(--line); border-radius: 13px; background: #eaf1f8; }
+.network-view-button { min-height: 40px; padding: 8px 16px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: .86rem; font-weight: 800; cursor: pointer; }
+.network-view-button:hover, .network-view-button:focus-visible { color: var(--blue-dark); }
+.network-view-button.active { background: var(--surface); color: var(--navy); box-shadow: 0 2px 10px rgba(20, 38, 61, .11); }
 .graph-layer-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 14px; }
 .placement-chip { min-height: 42px; padding: 8px 13px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--blue-dark); font-size: .84rem; font-weight: 750; cursor: pointer; }
 .placement-chip:hover, .placement-chip:focus-visible { border-color: var(--blue); }
@@ -353,6 +357,12 @@ input::placeholder { color: #788697; }
 .graph-svg .connection-hit { fill: none; stroke: transparent; stroke-width: 22; cursor: pointer; pointer-events: stroke; }
 .graph-svg .people-connection:hover .connection-line,
 .graph-svg .people-connection:focus .connection-line { opacity: 1; stroke-width: 3.4; }
+.department-graph .person-core { fill: var(--blue-dark); stroke-width: 2.5; }
+.department-graph .person-initials { font-size: 10px; letter-spacing: .02em; }
+.department-graph .connection-line { stroke-width: 1.65; opacity: .42; }
+.department-graph .connection-line.dimension { opacity: .46; stroke-dasharray: 5 5; }
+.department-graph .people-connection:hover .connection-line,
+.department-graph .people-connection:focus .connection-line { opacity: 1; stroke-width: 3; }
 
 .graph-focusbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line); background: #f3f8fc; }
 .graph-focusbar div { min-width: 0; }
@@ -410,6 +420,7 @@ input::placeholder { color: #788697; }
   .custom-add { grid-template-columns: 1fr; }
   .explore-head { display: grid; align-items: start; }
   .graph-controls { justify-content: flex-start; }
+  .network-view-switch { width: 100%; }
   .graph-stage, .graph-svg { min-height: 660px; height: 660px; }
   .person-row { grid-template-columns: 42px minmax(0, 1fr); }
   .person-row .btn { grid-column: 1 / -1; width: 100%; }
@@ -432,6 +443,7 @@ input::placeholder { color: #788697; }
   .explore-head h1 { font-size: 1.65rem; }
   .graph-controls { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
   .graph-controls select { width: 100%; }
+  .network-view-button { padding-inline: 9px; font-size: .8rem; }
   .graph-panel { border-radius: 16px; }
   .graph-stage, .graph-svg { min-height: 680px; height: 680px; }
   .graph-legend { gap: 8px 12px; }
