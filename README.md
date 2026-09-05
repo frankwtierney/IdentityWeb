@@ -9,15 +9,21 @@ across Campus Living.
 The front end is static and ships from `dist/`. Profiles are stored in a shared
 Supabase table so everyone sees the same department-wide network.
 
-- **Front end:** GitHub Pages, deployed by `.github/workflows/pages.yml` on every
-  push to `main`.
+- **Front end:** https://identityweb.leep.life, served by GitHub Pages and
+  deployed by `.github/workflows/pages.yml` on every push to `main`. The custom
+  domain lives in `dist/CNAME` so it survives redeploys.
 - **Backend:** Supabase project `IdentityWeb` (`tdrytmpcbmqkzjuxcnga`, us-east-2).
   Schema lives in `supabase/migrations/`.
 
-### First-time GitHub Pages setup
+### GitHub Pages setup
 
-In the repository, go to **Settings → Pages** and set **Source** to
-**GitHub Actions**. The next push to `main` publishes the site.
+The workflow enables Pages itself (`enablement: true` on `configure-pages`), so
+a fresh clone of this repo needs no manual setup. If a deploy ever fails with
+"Get Pages site failed", set **Settings → Pages → Source** to **GitHub Actions**
+and re-run the workflow.
+
+DNS: `identityweb.leep.life` points at GitHub's Pages addresses
+(185.199.108–111.153).
 
 ## How storage works
 
