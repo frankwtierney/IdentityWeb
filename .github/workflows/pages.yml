@@ -22,7 +22,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      # enablement lets the first run turn Pages on itself, instead of failing
+      # with "Get Pages site failed" until someone flips the setting by hand.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - name: Disable Jekyll processing
         run: touch dist/.nojekyll
       - uses: actions/upload-pages-artifact@v3
