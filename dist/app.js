@@ -228,9 +228,23 @@
     catch { return []; }
   }
 
+  function sharedProfiles() {
+    return (window.IdentityWebStore?.profiles() || []).map(profile => ({
+      ...profile,
+      identities: (profile.identities || []).map(identity => ({ ...identity, placement: identity.placement === 'context' ? 'hidden' : identity.placement }))
+    }));
+  }
+
+  // Seed profiles are the demo cohort, shared profiles are what everyone else
+  // has submitted, and local profiles are this device's mirror. Shared wins
+  // over local except for saves that never reached Supabase.
   function allProfiles() {
     const map = new Map(seedProfiles.map(profile => [normalizeEmail(profile.email), clone(profile)]));
     localProfiles().forEach(profile => map.set(normalizeEmail(profile.email), profile));
+    sharedProfiles().forEach(profile => {
+      const email = normalizeEmail(profile.email);
+      if (!window.IdentityWebStore?.isPending(email)) map.set(email, profile);
+    });
     return [...map.values()];
   }
 
@@ -241,6 +255,7 @@
     next.push(clone(profile));
     localStorage.setItem(storageKey, JSON.stringify(next));
     state.currentEmail = email;
+    window.IdentityWebStore?.save(clone(profile));
   }
 
   function identityCatalog() {
@@ -1387,4 +1402,10 @@
   });
 
   render();
+
+  // Re-render as shared profiles arrive so the network views fill in without a
+  // manual refresh. The first render already happened, so a slow or failed
+  // load never blocks the assessment itself.
+  window.IdentityWebStore?.onChange(() => render(false));
+  window.IdentityWebStore?.start();
 })();
