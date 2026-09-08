@@ -29,6 +29,18 @@ jobs:
           enablement: true
       - name: Disable Jekyll processing
         run: touch dist/.nojekyll
+      # Assets are referenced by a bare filename, so a browser holding an older
+      # copy keeps using it after a deploy. Stamping each URL with the commit
+      # makes every deploy a new URL, which no cache can answer stale.
+      - name: Stamp assets with the commit
+        run: |
+          v="${GITHUB_SHA::8}"
+          sed -i "s|href=\"styles.css\"|href=\"styles.css?v=$v\"|; \
+                  s|src=\"app.js\"|src=\"app.js?v=$v\"|; \
+                  s|src=\"supabase-config.js\"|src=\"supabase-config.js?v=$v\"|; \
+                  s|src=\"supabase-store.js\"|src=\"supabase-store.js?v=$v\"|" dist/index.html
+          echo "Stamped with $v:"
+          grep -E 'styles\.css|app\.js|supabase-' dist/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

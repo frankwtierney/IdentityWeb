@@ -210,7 +210,6 @@
     categoryFilter: 'all',
     deepIndex: 0,
     filter: 'all',
-    buildingFilter: 'all',
     matchMode: 'both',
     placementMode: 'all',
     networkView: 'local',
@@ -676,13 +675,20 @@
     return matches;
   }
 
+  // The people filter holds one scope: everyone, the viewer's own class, their
+  // own team, or a named team.
+  function inScope(profile, scopeOwner) {
+    if (state.filter === 'all') return true;
+    if (state.filter === 'instructor') return profile.instructor === scopeOwner.instructor;
+    if (state.filter === 'building') return isInstructor() || profile.community === scopeOwner.community;
+    return profile.community === state.filter;
+  }
+
   function filteredProfiles(anchor, includeWithoutMatch = false) {
     const scopeOwner = currentProfile();
     return allProfiles().filter(profile => {
       if (normalizeEmail(profile.email) === normalizeEmail(anchor.email)) return false;
-      if (state.filter === 'building' && !isInstructor() && profile.community !== scopeOwner.community) return false;
-      if (state.filter === 'instructor' && profile.instructor !== scopeOwner.instructor) return false;
-      if (state.buildingFilter !== 'all' && profile.community !== state.buildingFilter) return false;
+      if (!inScope(profile, scopeOwner)) return false;
       return includeWithoutMatch || graphMatchesBetween(anchor, profile).length > 0;
     });
   }
@@ -704,10 +710,7 @@
   function departmentProfiles() {
     const scopeOwner = currentProfile();
     return allProfiles().filter(profile => {
-      if (state.filter === 'building' && !isInstructor() && profile.community !== scopeOwner.community) return false;
-      if (state.filter === 'instructor' && profile.instructor !== scopeOwner.instructor) return false;
-      if (state.buildingFilter !== 'all' && profile.community !== state.buildingFilter) return false;
-      return true;
+      return inScope(profile, scopeOwner);
     });
   }
 
@@ -742,8 +745,7 @@
       <section class="screen-heading"><p class="eyebrow">${isDepartment ? `Department network · ${departmentPeople.length} CAs · ${departmentEdges.length} connected pairs` : `${esc(profile.firstName)}’s local network · ${allMatchedPeers.length} connected CA${allMatchedPeers.length === 1 ? '' : 's'} · ${totalIdentityLinks} identity link${totalIdentityLinks === 1 ? '' : 's'}`}</p><h1>${isDepartment ? 'Campus Living identity web' : (isMyWeb ? 'Your identity web' : `${esc(profile.firstName)}’s identity web`)}</h1><p>${isDepartment ? 'See the larger web across Campus Living. Tap initials to open that CA’s focused network, or tap a line to compare two CAs.' : 'Tap a CA to center their network. Tap a connection line to compare. Each line may represent one or more identity connections.'}</p></section>
       <div class="graph-controls">
         ${!isDepartment && !isMyWeb ? `<button class="graph-return" type="button" data-action="return-my-web">${isInstructor() ? 'Back to department web' : 'Return to my web'}</button>` : ''}
-        <label><span class="sr-only">People shown</span><select data-input="graph-filter">${isInstructor() && !instructorSection() ? '' : `<option value="instructor" ${state.filter === 'instructor' ? 'selected' : ''}>My Class</option>`}${isInstructor() ? '' : `<option value="building" ${state.filter === 'building' ? 'selected' : ''}>My Team</option>`}<option value="all" ${state.filter === 'all' ? 'selected' : ''}>All Campus Living</option></select></label>
-        <label><span class="sr-only">Community</span><select data-input="building-filter"><option value="all" ${state.buildingFilter === 'all' ? 'selected' : ''}>All communities</option>${communities.map(([code]) => `<option value="${esc(code)}" ${state.buildingFilter === code ? 'selected' : ''}>${esc(code)}</option>`).join('')}</select></label>
+        <label><span class="sr-only">People shown</span><select data-input="graph-filter">${isInstructor() && !instructorSection() ? '' : `<option value="instructor" ${state.filter === 'instructor' ? 'selected' : ''}>My Class</option>`}${isInstructor() ? '' : `<option value="building" ${state.filter === 'building' ? 'selected' : ''}>My Team</option>`}<option value="all" ${state.filter === 'all' ? 'selected' : ''}>All Campus Living</option><optgroup label="One team">${communities.map(([code]) => `<option value="${esc(code)}" ${state.filter === code ? 'selected' : ''}>${esc(code)}</option>`).join('')}</optgroup></select></label>
         <label><span class="sr-only">Connection type</span><select data-input="match-mode"><option value="both" ${state.matchMode === 'both' ? 'selected' : ''}>All connections</option><option value="exact" ${state.matchMode === 'exact' ? 'selected' : ''}>Exact identities</option><option value="dimension" ${state.matchMode === 'dimension' ? 'selected' : ''}>Shared dimensions</option></select></label>
       </div>
     </div>
@@ -1199,8 +1201,8 @@
 
   function renderInstructorIdentityHome() {
     const entries = cohortIdentities();
-    const scope = state.buildingFilter !== 'all' ? state.buildingFilter
-      : state.filter === 'instructor' && instructorSection() ? 'your class'
+    const scope = state.filter === 'instructor' && instructorSection() ? 'your class'
+      : state.filter !== 'all' && state.filter !== 'building' ? state.filter
       : 'Campus Living';
     const cards = entries.map(entry => `<button class="deep-choice" type="button" data-action="open-identity" data-owner="${esc(normalizeEmail(entry.holders[0].email))}" data-id="${esc(entry.id)}">
         <span class="check" aria-hidden="true">→</span><strong>${esc(entry.label)}</strong><p>${esc(categoryLabel(entry.category))}<br>${entry.holders.length} CA${entry.holders.length === 1 ? '' : 's'}</p>
@@ -1448,13 +1450,6 @@
       state.graph = defaultGraphView();
       render(false);
     }
-    if (event.target.matches('[data-input="building-filter"]')) {
-      state.buildingFilter = event.target.value;
-      state.graphFocusEmail = isInstructor() ? '' : state.currentEmail;
-      state.graphIdentityFocus = null;
-      state.graph = defaultGraphView();
-      render(false);
-    }
     if (event.target.matches('[data-input="match-mode"]')) {
       state.matchMode = event.target.value;
       state.graphIdentityFocus = null;
@@ -1494,7 +1489,7 @@
       state.view = currentProfile() && state.currentEmail ? 'web' : 'welcome';
       render();
     } else if (action === 'switch-profile') {
-      state.view = 'welcome'; state.currentEmail = ''; state.instructorEmail = ''; state.draft = null; state.selectedOwnerEmail = null; state.selectedPeerEmail = null; state.graphFocusEmail = ''; state.graphIdentityFocus = null; state.filter = 'all'; state.buildingFilter = 'all';
+      state.view = 'welcome'; state.currentEmail = ''; state.instructorEmail = ''; state.draft = null; state.selectedOwnerEmail = null; state.selectedPeerEmail = null; state.graphFocusEmail = ''; state.graphIdentityFocus = null; state.filter = 'all';
       render();
     } else if (action === 'demo') {
       state.instructorEmail = ''; state.currentEmail = 'maya.chen@buffalo.edu'; state.selectedOwnerEmail = state.currentEmail; state.graphFocusEmail = state.currentEmail; state.graphIdentityFocus = null; state.draft = null; state.view = 'web';
@@ -1607,7 +1602,7 @@
     } else if (action === 'reset-graph') {
       state.graph = defaultGraphView(); setGraphTransform();
     } else if (action === 'show-all') {
-      state.filter = 'all'; state.buildingFilter = 'all'; state.matchMode = 'both'; state.placementMode = 'all'; state.graphFocusEmail = isInstructor() ? '' : state.currentEmail; state.graphIdentityFocus = null; state.graph = defaultGraphView(); render(false);
+      state.filter = 'all'; state.matchMode = 'both'; state.placementMode = 'all'; state.graphFocusEmail = isInstructor() ? '' : state.currentEmail; state.graphIdentityFocus = null; state.graph = defaultGraphView(); render(false);
     }
   });
 
