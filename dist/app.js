@@ -1582,8 +1582,11 @@
   app.addEventListener('pointerdown', event => {
     const stage = event.target.closest('[data-graph-stage]');
     if (!stage) return;
-    stage.setPointerCapture?.(event.pointerId);
-    state.graphPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    // Capture is claimed on the first real drag, never here. Capturing at press
+    // time retargets pointerup to the stage, so the browser then resolves the
+    // click against the stage rather than the node under the cursor and no
+    // action ever fires.
+    state.graphPointers.set(event.pointerId, { x: event.clientX, y: event.clientY, originX: event.clientX, originY: event.clientY, captured: false });
     state.graphMoved = false;
     stage.classList.add('dragging');
   });
@@ -1597,7 +1600,22 @@
       const ratio = (svg?.viewBox?.baseVal?.width || stage.clientWidth) / stage.clientWidth;
       const dx = (event.clientX - previous.x) * ratio;
       const dy = (event.clientY - previous.y) * ratio;
-      if (Math.abs(dx) + Math.abs(dy) > 1) { state.graphMoved = true; state.graph.auto = false; }
+      // Judge a drag in screen pixels travelled from the press, never in canvas
+      // units: the canvas grows with the cohort, so a unit-based threshold gets
+      // stricter as more CAs submit until an ordinary click counts as a drag
+      // and never reaches the node under it.
+      const travelled = Math.hypot(event.clientX - previous.originX, event.clientY - previous.originY);
+      if (travelled > 5) {
+        state.graphMoved = true;
+        state.graph.auto = false;
+        // Now that this is a drag, capture so panning survives the cursor
+        // leaving the stage.
+        if (!previous.captured) {
+          // Throws when the pointer is no longer active, which is harmless here
+          // and must not take the drag handler down with it.
+          try { stage.setPointerCapture?.(event.pointerId); previous.captured = true; } catch { /* keep panning uncaptured */ }
+        }
+      }
       state.graph.x += dx;
       state.graph.y += dy;
     } else if (state.graphPointers.size === 2) {
@@ -1610,12 +1628,19 @@
         state.graphMoved = true;
       }
     }
-    state.graphPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    state.graphPointers.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+      originX: previous.originX ?? event.clientX,
+      originY: previous.originY ?? event.clientY,
+      captured: previous.captured
+    });
     setGraphTransform();
   });
 
   function endPointer(event) {
     const stage = event.target.closest?.('[data-graph-stage]') || document.querySelector('[data-graph-stage]');
+    if (state.graphPointers.get(event.pointerId)?.captured) stage?.releasePointerCapture?.(event.pointerId);
     state.graphPointers.delete(event.pointerId);
     if (!state.graphPointers.size) stage?.classList.remove('dragging');
   }

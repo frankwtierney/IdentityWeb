@@ -335,6 +335,13 @@ input::placeholder { color: #788697; }
 
 .graph-panel { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow); }
 .graph-stage { width: 100%; min-height: 620px; touch-action: none; cursor: grab; user-select: none; }
+/* Labels inside the SVG are selectable text as far as the browser is concerned,
+   so dragging across them draws a selection box instead of panning. */
+.graph-svg, .graph-svg text { user-select: none; -webkit-user-select: none; }
+/* Keep a focus ring for keyboard users without boxing every mouse click. */
+.graph-svg .person-focus:focus:not(:focus-visible),
+.graph-svg .people-connection:focus:not(:focus-visible),
+.graph-svg .connection-marker:focus:not(:focus-visible) { outline: none; }
 .graph-stage.dragging { cursor: grabbing; }
 .graph-svg { display: block; width: 100%; height: 620px; }
 .graph-tools { position: absolute; top: 12px; right: 12px; display: grid; gap: 7px; }
