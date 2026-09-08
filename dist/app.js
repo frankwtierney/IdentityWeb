@@ -210,6 +210,7 @@
     categoryFilter: 'all',
     deepIndex: 0,
     filter: 'all',
+    teams: [],
     matchMode: 'both',
     placementMode: 'all',
     networkView: 'local',
@@ -338,35 +339,24 @@
           </button>
           ${signedIn ? `<button class="header-action" type="button" data-action="switch-profile">Switch profile</button>` : ''}
         </header>
-        <main class="main ${options.narrow ? 'narrow' : ''} ${options.nav ? 'has-page-nav' : ''}">${content}</main>
-        ${options.nav ? pageNav(options.nav) : ''}
-        ${options.tabs ? tabs(options.activeTab) : ''}
+        <main class="main ${options.narrow ? 'narrow' : ''}">${content}</main>
+        ${options.tabs ? tabs(options.activeTab, options.nav) : ''}
       </div>`;
   }
 
-  // A floating pair of controls that sits above the tab bar, so leaving a page
-  // does not mean scrolling to the bottom of it first.
-  function pageNav(nav) {
-    return `<nav class="page-nav" aria-label="Page navigation">
-      <button class="page-nav-button back" type="button" data-view="${esc(nav.backView)}">
-        <span class="page-nav-arrow" aria-hidden="true">←</span>${esc(nav.backLabel || 'Back')}
-      </button>
-      ${nav.forwardView ? `<button class="page-nav-button" type="button" data-view="${esc(nav.forwardView)}">${esc(nav.forwardLabel)}</button>` : ''}
-    </nav>`;
-  }
-
-  function tabs(active) {
-    if (isInstructor()) {
-      return `<nav class="app-tabs" aria-label="Main views">
-        <button class="app-tab ${active === 'web' ? 'active' : ''}" type="button" data-view="web">Department Web</button>
-        <button class="app-tab ${active === 'explore' ? 'active' : ''}" type="button" data-view="identity-home">Explore</button>
-      </nav>`;
-    }
-    return `<nav class="app-tabs" aria-label="Main views">
-      <button class="app-tab ${active === 'web' ? 'active' : ''}" type="button" data-view="web">My Web</button>
-      <button class="app-tab ${active === 'explore' ? 'active' : ''}" type="button" data-view="identity-home">Explore</button>
-      <button class="app-tab ${active === 'ring' ? 'active' : ''}" type="button" data-view="ring">My Ring</button>
-    </nav>`;
+  // One bar. Back sits inside the tab bar on the pages that have somewhere to
+  // go back to, so leaving a page never means scrolling to the bottom of it and
+  // there is no second row of controls stacked above the first.
+  function tabs(active, nav) {
+    const back = nav ? `<button class="app-tab back" type="button" data-view="${esc(nav.backView)}" aria-label="Back">
+        <span class="tab-arrow" aria-hidden="true">←</span><span class="tab-back-label">Back</span>
+      </button>` : '';
+    const views = isInstructor()
+      ? [['web', 'Department Web'], ['explore', 'Explore']]
+      : [['web', 'My Web'], ['explore', 'Explore'], ['ring', 'My Ring']];
+    const items = views.map(([key, label]) =>
+      `<button class="app-tab ${active === key ? 'active' : ''}" type="button" data-view="${key === 'explore' ? 'identity-home' : key}">${esc(label)}</button>`).join('');
+    return `<nav class="app-tabs ${nav ? 'with-back' : ''}" style="--tab-count:${views.length}" aria-label="Main views">${back}${items}</nav>`;
   }
 
   function progress(step, total, label) {
@@ -678,10 +668,11 @@
   // The people filter holds one scope: everyone, the viewer's own class, their
   // own team, or a named team.
   function inScope(profile, scopeOwner) {
+    if (state.teams.length && !state.teams.includes(profile.community)) return false;
     if (state.filter === 'all') return true;
     if (state.filter === 'instructor') return profile.instructor === scopeOwner.instructor;
     if (state.filter === 'building') return isInstructor() || profile.community === scopeOwner.community;
-    return profile.community === state.filter;
+    return true;
   }
 
   function filteredProfiles(anchor, includeWithoutMatch = false) {
@@ -745,7 +736,7 @@
       <section class="screen-heading"><p class="eyebrow">${isDepartment ? `Department network · ${departmentPeople.length} CAs · ${departmentEdges.length} connected pairs` : `${esc(profile.firstName)}’s local network · ${allMatchedPeers.length} connected CA${allMatchedPeers.length === 1 ? '' : 's'} · ${totalIdentityLinks} identity link${totalIdentityLinks === 1 ? '' : 's'}`}</p><h1>${isDepartment ? 'Campus Living identity web' : (isMyWeb ? 'Your identity web' : `${esc(profile.firstName)}’s identity web`)}</h1><p>${isDepartment ? 'See the larger web across Campus Living. Tap initials to open that CA’s focused network, or tap a line to compare two CAs.' : 'Tap a CA to center their network. Tap a connection line to compare. Each line may represent one or more identity connections.'}</p></section>
       <div class="graph-controls">
         ${!isDepartment && !isMyWeb ? `<button class="graph-return" type="button" data-action="return-my-web">${isInstructor() ? 'Back to department web' : 'Return to my web'}</button>` : ''}
-        <label><span class="sr-only">People shown</span><select data-input="graph-filter">${isInstructor() && !instructorSection() ? '' : `<option value="instructor" ${state.filter === 'instructor' ? 'selected' : ''}>My Class</option>`}${isInstructor() ? '' : `<option value="building" ${state.filter === 'building' ? 'selected' : ''}>My Team</option>`}<option value="all" ${state.filter === 'all' ? 'selected' : ''}>All Campus Living</option><optgroup label="One team">${communities.map(([code]) => `<option value="${esc(code)}" ${state.filter === code ? 'selected' : ''}>${esc(code)}</option>`).join('')}</optgroup></select></label>
+        <label><span class="sr-only">People shown</span><select data-input="graph-filter">${isInstructor() && !instructorSection() ? '' : `<option value="instructor" ${state.filter === 'instructor' ? 'selected' : ''}>My Class</option>`}${isInstructor() ? '' : `<option value="building" ${state.filter === 'building' ? 'selected' : ''}>My Team</option>`}<option value="all" ${state.filter === 'all' ? 'selected' : ''}>All Campus Living</option></select></label>
         <label><span class="sr-only">Connection type</span><select data-input="match-mode"><option value="both" ${state.matchMode === 'both' ? 'selected' : ''}>All connections</option><option value="exact" ${state.matchMode === 'exact' ? 'selected' : ''}>Exact identities</option><option value="dimension" ${state.matchMode === 'dimension' ? 'selected' : ''}>Shared dimensions</option></select></label>
       </div>
     </div>
@@ -753,6 +744,11 @@
       <button class="network-view-button ${!isDepartment ? 'active' : ''}" type="button" data-action="network-view" data-value="local" aria-pressed="${!isDepartment}">My Network</button>
       <button class="network-view-button ${isDepartment ? 'active' : ''}" type="button" data-action="network-view" data-value="department" aria-pressed="${isDepartment}">Department Web</button>
     </div>`}
+    <div class="team-filters" role="group" aria-label="Filter by team">
+      <span class="team-filters-label">Teams</span>
+      ${communities.map(([code, name]) => `<button class="placement-chip team-chip ${state.teams.includes(code) ? 'active' : ''}" type="button" data-action="team-filter" data-value="${esc(code)}" aria-pressed="${state.teams.includes(code)}" title="${esc(name)}">${esc(code)}</button>`).join('')}
+      ${state.teams.length ? '<button class="team-clear" type="button" data-action="clear-teams">Clear</button>' : ''}
+    </div>
     <div class="graph-layer-filters" role="group" aria-label="${isDepartment ? 'Filter department connections by identity placement' : `Filter by ${esc(profile.firstName)}’s identity placement`}">
       <button class="placement-chip ${state.placementMode === 'all' ? 'active' : ''}" type="button" data-action="placement-filter" data-value="all" aria-pressed="${state.placementMode === 'all'}">All identities</button>
       <button class="placement-chip ${state.placementMode === 'visible' ? 'active' : ''}" type="button" data-action="placement-filter" data-value="visible" aria-pressed="${state.placementMode === 'visible'}">${isDepartment ? 'Outer identities' : `${placementOwner} outer identities`}</button>
@@ -1201,8 +1197,8 @@
 
   function renderInstructorIdentityHome() {
     const entries = cohortIdentities();
-    const scope = state.filter === 'instructor' && instructorSection() ? 'your class'
-      : state.filter !== 'all' && state.filter !== 'building' ? state.filter
+    const scope = state.teams.length ? state.teams.join(' + ')
+      : state.filter === 'instructor' && instructorSection() ? 'your class'
       : 'Campus Living';
     const cards = entries.map(entry => `<button class="deep-choice" type="button" data-action="open-identity" data-owner="${esc(normalizeEmail(entry.holders[0].email))}" data-id="${esc(entry.id)}">
         <span class="check" aria-hidden="true">→</span><strong>${esc(entry.label)}</strong><p>${esc(categoryLabel(entry.category))}<br>${entry.holders.length} CA${entry.holders.length === 1 ? '' : 's'}</p>
@@ -1258,7 +1254,7 @@
         <div class="pattern-strip">${patterns.length ? patterns.map(item => `<span class="pattern"><b>${item.count}</b>${esc(item.label)}</span>`).join('') : '<span class="muted small">No VPR patterns are available yet.</span>'}</div>
       </div>
       <div class="connection-list">${rows || '<div class="panel panel-body"><p>No other profiles currently use this identity dimension.</p></div>'}</div>
-      `, { tabs: true, activeTab: 'explore', nav: { backView: 'web', backLabel: 'Back', forwardView: 'identity-home', forwardLabel: 'View Identities' } });
+      `, { tabs: true, activeTab: 'explore', nav: { backView: 'web' } });
   }
 
   function patternCounts(deepened) {
@@ -1281,7 +1277,7 @@
       <div class="panel panel-body">
         ${comparisonTable(owner.firstName, peer.firstName, compare)}
       </div>
-      `, { tabs: true, activeTab: 'explore', nav: { backView: 'identity', backLabel: 'Back', forwardView: 'identity-home', forwardLabel: 'View Identities' } });
+      `, { tabs: true, activeTab: 'explore', nav: { backView: 'identity' } });
   }
 
   function comparisonColumns(identityA, identityB) {
@@ -1489,7 +1485,7 @@
       state.view = currentProfile() && state.currentEmail ? 'web' : 'welcome';
       render();
     } else if (action === 'switch-profile') {
-      state.view = 'welcome'; state.currentEmail = ''; state.instructorEmail = ''; state.draft = null; state.selectedOwnerEmail = null; state.selectedPeerEmail = null; state.graphFocusEmail = ''; state.graphIdentityFocus = null; state.filter = 'all';
+      state.view = 'welcome'; state.currentEmail = ''; state.instructorEmail = ''; state.draft = null; state.selectedOwnerEmail = null; state.selectedPeerEmail = null; state.graphFocusEmail = ''; state.graphIdentityFocus = null; state.filter = 'all'; state.teams = [];
       render();
     } else if (action === 'demo') {
       state.instructorEmail = ''; state.currentEmail = 'maya.chen@buffalo.edu'; state.selectedOwnerEmail = state.currentEmail; state.graphFocusEmail = state.currentEmail; state.graphIdentityFocus = null; state.draft = null; state.view = 'web';
@@ -1551,6 +1547,19 @@
       state.graphIdentityFocus = null;
       state.graph = defaultGraphView();
       render(false);
+    } else if (action === 'team-filter') {
+      const code = target.dataset.value;
+      state.teams = state.teams.includes(code) ? state.teams.filter(item => item !== code) : [...state.teams, code];
+      state.graphFocusEmail = isInstructor() ? '' : state.currentEmail;
+      state.graphIdentityFocus = null;
+      state.graph = defaultGraphView();
+      render(false);
+    } else if (action === 'clear-teams') {
+      state.teams = [];
+      state.graphFocusEmail = isInstructor() ? '' : state.currentEmail;
+      state.graphIdentityFocus = null;
+      state.graph = defaultGraphView();
+      render(false);
     } else if (action === 'placement-filter') {
       state.placementMode = target.dataset.value;
       state.graphIdentityFocus = null;
@@ -1602,7 +1611,7 @@
     } else if (action === 'reset-graph') {
       state.graph = defaultGraphView(); setGraphTransform();
     } else if (action === 'show-all') {
-      state.filter = 'all'; state.matchMode = 'both'; state.placementMode = 'all'; state.graphFocusEmail = isInstructor() ? '' : state.currentEmail; state.graphIdentityFocus = null; state.graph = defaultGraphView(); render(false);
+      state.filter = 'all'; state.teams = []; state.matchMode = 'both'; state.placementMode = 'all'; state.graphFocusEmail = isInstructor() ? '' : state.currentEmail; state.graphIdentityFocus = null; state.graph = defaultGraphView(); render(false);
     }
   });
 
