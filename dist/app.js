@@ -223,6 +223,16 @@
     graphMoved: false
   };
 
+  function emailNoise(email, salt) {
+    let hash = 2166136261;
+    const seed = `${normalizeEmail(email)}:${salt}`;
+    for (let i = 0; i < seed.length; i += 1) {
+      hash ^= seed.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return ((hash >>> 0) % 10000) / 10000;
+  }
+
   function slug(text) {
     return String(text).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   }
@@ -722,7 +732,7 @@
       <button class="placement-chip ${state.placementMode === 'visible' ? 'active' : ''}" type="button" data-action="placement-filter" data-value="visible" aria-pressed="${state.placementMode === 'visible'}">${isDepartment ? 'Outer identities' : `${placementOwner} outer identities`}</button>
       <button class="placement-chip ${state.placementMode === 'hidden' ? 'active' : ''}" type="button" data-action="placement-filter" data-value="hidden" aria-pressed="${state.placementMode === 'hidden'}">${isDepartment ? 'Hidden identities' : `${placementOwner} hidden identities`}</button>
     </div>
-    <section class="graph-panel" aria-label="Interactive identity web">
+    <section class="graph-panel ${isDepartment ? 'department' : ''}" aria-label="Interactive identity web">
       ${(isDepartment ? departmentEdges.length : peers.length) ? `<div class="graph-stage" data-graph-stage>${isDepartment ? departmentGraphSvg(departmentPeople, departmentEdges) : graphSvg(profile, peers)}</div>
         <div class="graph-tools" aria-label="Graph controls"><button class="graph-tool" type="button" data-action="zoom-in" aria-label="Zoom in">+</button><button class="graph-tool" type="button" data-action="zoom-out" aria-label="Zoom out">−</button><button class="graph-tool" type="button" data-action="reset-graph" aria-label="Reset graph">↺</button></div>` : `<div class="graph-empty"><div><h2>No connections in this view yet</h2><p class="muted">Try another filter or connection type.</p><button class="btn" type="button" data-action="show-all">Show all connections</button></div></div>`}
       ${!isDepartment && hiddenPeerCount ? `<div class="graph-more"><strong>${hiddenPeerCount} more connected CA${hiddenPeerCount === 1 ? '' : 's'}</strong><span>Use the filters or recenter the web to explore them.</span></div>` : ''}
@@ -746,7 +756,7 @@
 
   function departmentGraphSvg(profiles, edges) {
     const mobile = window.innerWidth < 640;
-    const view = mobile ? { width: 420, height: 680, cx: 210, cy: 332, r: 20 } : { width: 900, height: 580, cx: 450, cy: 282, r: 22 };
+    const view = mobile ? { width: 440, height: 760, cx: 220, cy: 380, r: 19 } : { width: 1100, height: 780, cx: 550, cy: 390, r: 22 };
     const positions = departmentForceLayout(profiles, edges, view, mobile);
     const lines = edges.map((edge, index) => {
       const a = positions[edge.source];
@@ -785,6 +795,7 @@
         <circle class="person-core-hit" cx="${position.x}" cy="${position.y}" r="${radius + 9}"></circle>
         <text class="person-initials" x="${position.x}" y="${position.y}">${esc(initials(profile))}</text>
       </g>
+      <text class="person-name" x="${position.x}" y="${position.y + radius + 17}">${esc(profile.firstName)} · ${esc(profile.community)}</text>
       <title>${esc(profile.firstName)} ${esc(profile.lastName)} · ${esc(profile.community)}</title>
     </g>`;
   }
@@ -794,14 +805,27 @@
     // A large cohort shares so many dimensions that nearly every pair is linked.
     // Those springs pull the whole graph into a ball, so bigger cohorts need
     // proportionally more room before any single line can be followed.
-    const crowding = Math.min(1.9, Math.max(1, Math.sqrt(count / 8)));
-    const orbit = Math.min(view.width, view.height) * (mobile ? .38 : .43);
+    const crowding = Math.min(2.4, Math.max(1, Math.sqrt(count / 7)));
+    const orbit = Math.min(view.width, view.height) * (mobile ? .40 : .44);
+    // Seed positions off each person's email rather than their index, so the
+    // starting shape is lopsided instead of a perfect ring and nobody reads as
+    // deliberately placed at the centre. Seeding from the email also keeps the
+    // layout identical between renders, so nodes do not jump when the graph
+    // redraws on a filter change, a resize, or a peer submitting.
     const nodes = profiles.map((profile, index) => {
-      const angle = -Math.PI / 2 + index * (Math.PI * 2 / count);
-      const band = count > 14 ? .84 + (index % 3) * .08 : 1;
-      return { x: view.cx + Math.cos(angle) * orbit * band, y: view.cy + Math.sin(angle) * orbit * band, vx: 0, vy: 0 };
+      const angle = -Math.PI / 2 + index * (Math.PI * 2 / count) + (emailNoise(profile.email, 'angle') - .5) * 1.5;
+      const band = .62 + emailNoise(profile.email, 'band') * .64;
+      return {
+        x: view.cx + Math.cos(angle) * orbit * band + (emailNoise(profile.email, 'x') - .5) * 90,
+        y: view.cy + Math.sin(angle) * orbit * band + (emailNoise(profile.email, 'y') - .5) * 90,
+        vx: 0,
+        vy: 0
+      };
     });
-    for (let step = 0; step < 260; step += 1) {
+    // Labels sit under each node and are far wider than the node itself, so
+    // horizontal separation has to clear the label, not just the circle.
+    const labelHalfWidth = mobile ? 34 : 44;
+    for (let step = 0; step < 320; step += 1) {
       edges.forEach(edge => {
         const a = nodes[edge.source], b = nodes[edge.target];
         let dx = b.x - a.x, dy = b.y - a.y;
@@ -818,21 +842,56 @@
           let dx = b.x - a.x, dy = b.y - a.y;
           const distance = Math.max(1, Math.hypot(dx, dy));
           const minimum = view.r * 2 + (mobile ? 18 : 22) * crowding * 1.7;
-          const repel = 900 / (distance * distance) + Math.max(0, minimum - distance) * .14;
-          dx /= distance; dy /= distance;
-          a.vx -= dx * repel; a.vy -= dy * repel;
-          b.vx += dx * repel; b.vy += dy * repel;
+          let repel = 1400 / (distance * distance) + Math.max(0, minimum - distance) * .16;
+          a.vx -= (dx / distance) * repel; a.vy -= (dy / distance) * repel;
+          b.vx += (dx / distance) * repel; b.vy += (dy / distance) * repel;
+          // Push apart horizontally when two labels would collide.
+          const labelGap = labelHalfWidth * 2 - Math.abs(dx);
+          if (labelGap > 0 && Math.abs(dy) < 30) {
+            const nudge = labelGap * .035 * (dx < 0 ? -1 : 1);
+            a.vx -= nudge; b.vx += nudge;
+          }
         }
       }
       nodes.forEach(node => {
-        node.vx += (view.cx - node.x) * (.0008 / crowding);
-        node.vy += (view.cy - node.y) * (.0008 / crowding);
-        node.vx *= .79; node.vy *= .79;
+        // Just enough centre pull to stop stray nodes drifting away, not enough
+        // to round the whole cohort back into a disc.
+        node.vx += (view.cx - node.x) * (.00035 / crowding);
+        node.vy += (view.cy - node.y) * (.00035 / crowding);
+        node.vx *= .81; node.vy *= .81;
         node.x += node.vx; node.y += node.vy;
-        node.x = Math.max(view.r + 16, Math.min(view.width - view.r - 16, node.x));
-        node.y = Math.max(view.r + 16, Math.min(view.height - view.r - 16, node.y));
       });
     }
+
+    // Because nearly every pair is linked, the springs always settle into a
+    // blob far smaller than the canvas, and chasing that with bigger force
+    // constants only makes a bigger blob. Let the forces decide the shape, then
+    // stretch that shape to fill the space we actually have. Allowing the axes
+    // to differ a little uses a wide panel properly and keeps the outline from
+    // reading as a circle, without visibly distorting anyone.
+    const xs = nodes.map(node => node.x);
+    const ys = nodes.map(node => node.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const padX = view.r + labelHalfWidth + 6;
+    const padY = view.r + 34;
+    let scaleX = (view.width - padX * 2) / Math.max(1, maxX - minX);
+    let scaleY = (view.height - padY * 2) / Math.max(1, maxY - minY);
+    // Let the two axes diverge enough to actually fill a wide desktop panel or
+    // a tall phone one. On an abstract network this reads as organic rather
+    // than stretched, and it helps break up the circular outline.
+    const anisotropy = 1.9;
+    scaleX = Math.min(scaleX, scaleY * anisotropy);
+    scaleY = Math.min(scaleY, scaleX * anisotropy);
+    const spanX = (maxX - minX) * scaleX;
+    const spanY = (maxY - minY) * scaleY;
+    const offsetX = (view.width - spanX) / 2;
+    const offsetY = (view.height - spanY) / 2;
+    nodes.forEach(node => {
+      node.x = offsetX + (node.x - minX) * scaleX;
+      node.y = offsetY + (node.y - minY) * scaleY;
+    });
+
     return nodes.map(node => ({ x: +node.x.toFixed(2), y: +node.y.toFixed(2) }));
   }
 
