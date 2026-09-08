@@ -300,6 +300,45 @@ input::placeholder { color: #788697; }
 .salience { color: var(--blue-dark); letter-spacing: 2px; white-space: nowrap; }
 .vpr-summary { margin-top: 9px; color: var(--ink) !important; }
 
+/* Floating page navigation, sitting just above the tab bar in the same visual
+   language as the graph tools. Back is filled so it reads as the way out
+   rather than another equal option. */
+.page-nav {
+  position: fixed;
+  z-index: 29;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(74px + max(10px, env(safe-area-inset-bottom)));
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: min(calc(100% - 24px), 500px);
+  pointer-events: none;
+}
+.page-nav-button {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .96);
+  color: var(--navy);
+  font-size: .82rem;
+  font-weight: 750;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(20, 38, 61, .14);
+  backdrop-filter: blur(16px);
+}
+.page-nav-button.back { border-color: var(--navy); background: var(--navy); color: white; }
+.page-nav-button.back:hover { background: #0d1a2b; }
+.page-nav-button:not(.back):hover { border-color: var(--blue); color: var(--blue); }
+.page-nav-arrow { font-size: 1rem; line-height: 1; }
+/* Clear both the floating pair and the tab bar below it. */
+.main.has-page-nav { padding-bottom: calc(146px + env(safe-area-inset-bottom)); }
+
 .app-tabs {
   position: fixed;
   z-index: 30;
@@ -374,6 +413,11 @@ input::placeholder { color: #788697; }
 .department-graph .person-core { fill: var(--blue-dark); stroke-width: 2.5; }
 .department-graph .person-initials { font-size: 10px; letter-spacing: .02em; }
 .department-graph .person-name { font-size: 10.5px; font-weight: 700; }
+/* Labels sit over the connection lines, so give each one an opaque plate to
+   read against. Sized from the rendered text after each draw. */
+.department-graph .person-name-pill { fill: rgba(255,255,255,.93); stroke: var(--line); stroke-width: .8; pointer-events: none; }
+[data-detail="far"] .department-graph .person-name-pill { opacity: 0; }
+.department-graph .person-nameplate { transition: opacity .14s ease; }
 /* Level of detail. A node too small to read carries no text; as the reader
    zooms in the name appears, then the initials inside the node. The stage's
    data-detail is set on zoom, so this costs no redraw. */
@@ -463,6 +507,7 @@ input::placeholder { color: #788697; }
   .app-header { min-height: 58px; }
   .brand-mark { width: 34px; height: 34px; flex-basis: 34px; }
   .main { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+  .main.has-page-nav { padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
   .panel-body { padding: 17px; }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
   .button-row .btn { flex: 1 1 120px; }

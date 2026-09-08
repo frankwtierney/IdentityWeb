@@ -338,9 +338,21 @@
           </button>
           ${signedIn ? `<button class="header-action" type="button" data-action="switch-profile">Switch profile</button>` : ''}
         </header>
-        <main class="main ${options.narrow ? 'narrow' : ''}">${content}</main>
+        <main class="main ${options.narrow ? 'narrow' : ''} ${options.nav ? 'has-page-nav' : ''}">${content}</main>
+        ${options.nav ? pageNav(options.nav) : ''}
         ${options.tabs ? tabs(options.activeTab) : ''}
       </div>`;
+  }
+
+  // A floating pair of controls that sits above the tab bar, so leaving a page
+  // does not mean scrolling to the bottom of it first.
+  function pageNav(nav) {
+    return `<nav class="page-nav" aria-label="Page navigation">
+      <button class="page-nav-button back" type="button" data-view="${esc(nav.backView)}">
+        <span class="page-nav-arrow" aria-hidden="true">←</span>${esc(nav.backLabel || 'Back')}
+      </button>
+      ${nav.forwardView ? `<button class="page-nav-button" type="button" data-view="${esc(nav.forwardView)}">${esc(nav.forwardLabel)}</button>` : ''}
+    </nav>`;
   }
 
   function tabs(active) {
@@ -383,7 +395,7 @@
     const renderer = views[state.view] || renderWelcome;
     app.innerHTML = renderer();
     if (scroll) window.scrollTo({ top: 0, behavior: 'auto' });
-    if (state.view === 'web') requestAnimationFrame(() => { frameGraph(); setGraphTransform(); });
+    if (state.view === 'web') requestAnimationFrame(() => { sizeNameplates(); frameGraph(); setGraphTransform(); });
   }
 
   function renderWelcome() {
@@ -816,7 +828,10 @@
         <circle class="person-core-hit" cx="${position.x}" cy="${position.y}" r="${radius + 9}"></circle>
         <text class="person-initials" x="${position.x}" y="${position.y}">${esc(initials(profile))}</text>
       </g>
-      <text class="person-name" x="${position.x}" y="${position.y + radius + 17}">${esc(profile.firstName)} · ${esc(profile.community)}</text>
+      <g class="person-nameplate">
+        <rect class="person-name-pill" x="${position.x}" y="${position.y + radius + 6}" width="0" height="0" rx="6"></rect>
+        <text class="person-name" x="${position.x}" y="${position.y + radius + 17}">${esc(profile.firstName)} · ${esc(profile.community)}</text>
+      </g>
       <title>${esc(profile.firstName)} ${esc(profile.lastName)} · ${esc(profile.community)}</title>
     </g>`;
   }
@@ -1097,6 +1112,27 @@
     return angles[index % angles.length] * Math.PI / 180;
   }
 
+  function sizeNameplates() {
+    document.querySelectorAll('.department-graph .person-nameplate').forEach(plate => {
+      const text = plate.querySelector('.person-name');
+      const pill = plate.querySelector('.person-name-pill');
+      if (!text || !pill) return;
+      let width = 0;
+      try { width = text.getComputedTextLength(); } catch { return; }
+      if (!width) return;
+      const padX = 5.5;
+      const padY = 2.5;
+      const ascent = 8.5;
+      const descent = 3;
+      const x = Number(text.getAttribute('x'));
+      const y = Number(text.getAttribute('y'));
+      pill.setAttribute('x', (x - width / 2 - padX).toFixed(2));
+      pill.setAttribute('y', (y - ascent - padY).toFixed(2));
+      pill.setAttribute('width', (width + padX * 2).toFixed(2));
+      pill.setAttribute('height', (ascent + descent + padY * 2).toFixed(2));
+    });
+  }
+
   function setGraphTransform() {
     const layer = document.getElementById('network-layer');
     if (layer) layer.setAttribute('transform', `translate(${state.graph.x} ${state.graph.y}) scale(${state.graph.scale})`);
@@ -1214,7 +1250,7 @@
         <div class="pattern-strip">${patterns.length ? patterns.map(item => `<span class="pattern"><b>${item.count}</b>${esc(item.label)}</span>`).join('') : '<span class="muted small">No VPR patterns are available yet.</span>'}</div>
       </div>
       <div class="connection-list">${rows || '<div class="panel panel-body"><p>No other profiles currently use this identity dimension.</p></div>'}</div>
-      <div class="button-row split"><button class="btn" type="button" data-view="web">Back to web</button><button class="btn" type="button" data-view="identity-home">Explore another identity</button></div>`, { tabs: true, activeTab: 'explore' });
+      `, { tabs: true, activeTab: 'explore', nav: { backView: 'web', backLabel: 'Back', forwardView: 'identity-home', forwardLabel: 'View Identities' } });
   }
 
   function patternCounts(deepened) {
@@ -1237,7 +1273,7 @@
       <div class="panel panel-body">
         ${comparisonTable(owner.firstName, peer.firstName, compare)}
       </div>
-      <div class="button-row split"><button class="btn" type="button" data-view="identity">Back to identity</button><button class="btn btn-primary" type="button" data-view="web">Return to web</button></div>`, { tabs: true, activeTab: 'explore' });
+      `, { tabs: true, activeTab: 'explore', nav: { backView: 'identity', backLabel: 'Back', forwardView: 'identity-home', forwardLabel: 'View Identities' } });
   }
 
   function comparisonColumns(identityA, identityB) {
