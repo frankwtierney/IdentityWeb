@@ -5,6 +5,26 @@
   const storageKey = 'elp496-identity-web-profiles-v2';
 
   const instructors = ['Amy S.', 'Derek W.', 'Frank T.', 'Kate B.', 'Katie L.', 'Maria M.', 'Peter S.', 'Ryan S.', 'Vicki H.'];
+
+  // Instructors sign in to observe rather than participate: they get a
+  // read-only stand-in profile instead of building a ring of their own.
+  // `section` is the name CAs pick on their own profile, which is what scopes
+  // the class filter. A null section means this person supervises without a
+  // section of CAs, so that filter is hidden for them and they see everyone.
+  const instructorAccounts = {
+    'amysnyde@buffalo.edu': { name: 'Amy Snyder', section: 'Amy S.' },
+    'bhagg@buffalo.edu': { name: 'Brian Haggerty', section: null },
+    'cbragdon@buffalo.edu': { name: 'Chris Bragdon', section: null },
+    'dwills@buffalo.edu': { name: 'Derek Wills', section: 'Derek W.' },
+    'franktie@buffalo.edu': { name: 'Frank Tierney', section: 'Frank T.' },
+    'kmburrow@buffalo.edu': { name: 'Katherine Burrow', section: 'Kate B.' },
+    'klavecch@buffalo.edu': { name: 'Katie La Vecchio', section: 'Katie L.' },
+    'mrm37@buffalo.edu': { name: 'Maria Marinucci', section: 'Maria M.' },
+    'mhunt2@buffalo.edu': { name: 'Meegan Hunt', section: null },
+    'ppsmith@buffalo.edu': { name: 'Peter Smith', section: 'Peter S.' },
+    'rjspeare@buffalo.edu': { name: 'Ryan Spearer-Tidrow', section: 'Ryan S.' },
+    'vhellma@buffalo.edu': { name: 'Victoria Hellman-Koester', section: 'Vicki H.' }
+  };
   const communities = [
     ['CLE', 'Clement Hall'],
     ['EVA', 'Evans Quad'],
@@ -183,6 +203,7 @@
   const state = {
     view: 'welcome',
     currentEmail: '',
+    instructorEmail: '',
     draft: null,
     selectedIds: [],
     identitySearch: '',
@@ -216,7 +237,32 @@
   function initials(profile) { return `${profile.firstName?.[0] || ''}${profile.lastName?.[0] || ''}`.toUpperCase(); }
   function normalizeEmail(email) { return String(email || '').trim().toLowerCase(); }
   function dots(value) { return `${'●'.repeat(value)}${'○'.repeat(3 - value)}`; }
-  function currentProfile() { return allProfiles().find(profile => normalizeEmail(profile.email) === normalizeEmail(state.currentEmail)) || state.draft; }
+  function instructorAccount(email) { return instructorAccounts[normalizeEmail(email)] || null; }
+  function isInstructor() { return Boolean(state.instructorEmail); }
+  function instructorSection() { return instructorAccount(state.instructorEmail)?.section || null; }
+
+  // Views scope everything off currentProfile(), so an instructor needs a
+  // profile-shaped object. It carries their section for the class filter and no
+  // identities, and it is never written to Supabase or shown as a node.
+  function instructorStandIn() {
+    const account = instructorAccount(state.instructorEmail);
+    const [firstName, ...rest] = (account?.name || 'Instructor').split(' ');
+    return {
+      firstName,
+      lastName: rest.join(' '),
+      email: normalizeEmail(state.instructorEmail),
+      instructor: account?.section || '',
+      community: '',
+      identities: [],
+      deepenedIds: [],
+      isInstructor: true
+    };
+  }
+
+  function currentProfile() {
+    if (isInstructor()) return instructorStandIn();
+    return allProfiles().find(profile => normalizeEmail(profile.email) === normalizeEmail(state.currentEmail)) || state.draft;
+  }
 
   function localProfiles() {
     try {
@@ -249,6 +295,7 @@
   }
 
   function saveProfile(profile) {
+    if (isInstructor()) return;
     const saved = localProfiles();
     const email = normalizeEmail(profile.email);
     const next = saved.filter(item => normalizeEmail(item.email) !== email);
@@ -279,6 +326,12 @@
   }
 
   function tabs(active) {
+    if (isInstructor()) {
+      return `<nav class="app-tabs" aria-label="Main views">
+        <button class="app-tab ${active === 'web' ? 'active' : ''}" type="button" data-view="web">Department Web</button>
+        <button class="app-tab ${active === 'explore' ? 'active' : ''}" type="button" data-view="identity-home">Explore</button>
+      </nav>`;
+    }
     return `<nav class="app-tabs" aria-label="Main views">
       <button class="app-tab ${active === 'web' ? 'active' : ''}" type="button" data-view="web">My Web</button>
       <button class="app-tab ${active === 'explore' ? 'active' : ''}" type="button" data-view="identity-home">Explore</button>
@@ -330,7 +383,7 @@
         <form class="stack" data-form="lookup" novalidate>
           <div>
             <h2>Begin or return</h2>
-            <p class="muted">Use your UB email to create your identity web or reopen it later.</p>
+            <p class="muted">Use your UB email to create your identity web or reopen it later. Instructors: sign in with your UB email to view the department web, no profile needed.</p>
           </div>
           <label class="field">
             <span>UB email</span>
@@ -596,7 +649,7 @@
     const scopeOwner = currentProfile();
     return allProfiles().filter(profile => {
       if (normalizeEmail(profile.email) === normalizeEmail(anchor.email)) return false;
-      if (state.filter === 'building' && profile.community !== scopeOwner.community) return false;
+      if (state.filter === 'building' && !isInstructor() && profile.community !== scopeOwner.community) return false;
       if (state.filter === 'instructor' && profile.instructor !== scopeOwner.instructor) return false;
       return includeWithoutMatch || graphMatchesBetween(anchor, profile).length > 0;
     });
@@ -619,7 +672,7 @@
   function departmentProfiles() {
     const scopeOwner = currentProfile();
     return allProfiles().filter(profile => {
-      if (state.filter === 'building' && profile.community !== scopeOwner.community) return false;
+      if (state.filter === 'building' && !isInstructor() && profile.community !== scopeOwner.community) return false;
       if (state.filter === 'instructor' && profile.instructor !== scopeOwner.instructor) return false;
       return true;
     });
@@ -640,7 +693,7 @@
   function renderWeb() {
     const signedInProfile = currentProfile();
     const profile = graphAnchorProfile();
-    const isDepartment = state.networkView === 'department';
+    const isDepartment = state.networkView === 'department' || (isInstructor() && !state.graphFocusEmail);
     const departmentPeople = isDepartment ? departmentProfiles() : [];
     const departmentEdges = isDepartment ? departmentConnections(departmentPeople) : [];
     const allMatchedPeers = filteredProfiles(profile)
@@ -655,15 +708,15 @@
     return shell(`<div class="explore-head">
       <section class="screen-heading"><p class="eyebrow">${isDepartment ? `Department network · ${departmentPeople.length} CAs · ${departmentEdges.length} connected pairs` : `${esc(profile.firstName)}’s local network · ${allMatchedPeers.length} connected CA${allMatchedPeers.length === 1 ? '' : 's'} · ${totalIdentityLinks} identity link${totalIdentityLinks === 1 ? '' : 's'}`}</p><h1>${isDepartment ? 'Campus Living identity web' : (isMyWeb ? 'Your identity web' : `${esc(profile.firstName)}’s identity web`)}</h1><p>${isDepartment ? 'See the larger web across Campus Living. Tap initials to open that CA’s focused network, or tap a line to compare two CAs.' : 'Tap a CA to center their network. Tap a connection line to compare. Each line may represent one or more identity connections.'}</p></section>
       <div class="graph-controls">
-        ${!isDepartment && !isMyWeb ? '<button class="graph-return" type="button" data-action="return-my-web">Return to my web</button>' : ''}
-        <label><span class="sr-only">People shown</span><select data-input="graph-filter"><option value="all" ${state.filter === 'all' ? 'selected' : ''}>All Campus Living</option><option value="building" ${state.filter === 'building' ? 'selected' : ''}>My building</option><option value="instructor" ${state.filter === 'instructor' ? 'selected' : ''}>My class</option></select></label>
+        ${!isDepartment && !isMyWeb ? `<button class="graph-return" type="button" data-action="return-my-web">${isInstructor() ? 'Back to department web' : 'Return to my web'}</button>` : ''}
+        <label><span class="sr-only">People shown</span><select data-input="graph-filter"><option value="all" ${state.filter === 'all' ? 'selected' : ''}>All Campus Living</option>${isInstructor() ? '' : `<option value="building" ${state.filter === 'building' ? 'selected' : ''}>My building</option>`}${isInstructor() && !instructorSection() ? '' : `<option value="instructor" ${state.filter === 'instructor' ? 'selected' : ''}>${isInstructor() ? 'My CAs' : 'My class'}</option>`}</select></label>
         <label><span class="sr-only">Connection type</span><select data-input="match-mode"><option value="both" ${state.matchMode === 'both' ? 'selected' : ''}>All connections</option><option value="exact" ${state.matchMode === 'exact' ? 'selected' : ''}>Exact identities</option><option value="dimension" ${state.matchMode === 'dimension' ? 'selected' : ''}>Shared dimensions</option></select></label>
       </div>
     </div>
-    <div class="network-view-switch" role="group" aria-label="Choose network view">
+    ${isInstructor() ? '' : `<div class="network-view-switch" role="group" aria-label="Choose network view">
       <button class="network-view-button ${!isDepartment ? 'active' : ''}" type="button" data-action="network-view" data-value="local" aria-pressed="${!isDepartment}">My Network</button>
       <button class="network-view-button ${isDepartment ? 'active' : ''}" type="button" data-action="network-view" data-value="department" aria-pressed="${isDepartment}">Department Web</button>
-    </div>
+    </div>`}
     <div class="graph-layer-filters" role="group" aria-label="${isDepartment ? 'Filter department connections by identity placement' : `Filter by ${esc(profile.firstName)}’s identity placement`}">
       <button class="placement-chip ${state.placementMode === 'all' ? 'active' : ''}" type="button" data-action="placement-filter" data-value="all" aria-pressed="${state.placementMode === 'all'}">All identities</button>
       <button class="placement-chip ${state.placementMode === 'visible' ? 'active' : ''}" type="button" data-action="placement-filter" data-value="visible" aria-pressed="${state.placementMode === 'visible'}">${isDepartment ? 'Outer identities' : `${placementOwner} outer identities`}</button>
@@ -675,7 +728,9 @@
       ${!isDepartment && hiddenPeerCount ? `<div class="graph-more"><strong>${hiddenPeerCount} more connected CA${hiddenPeerCount === 1 ? '' : 's'}</strong><span>Use the filters or recenter the web to explore them.</span></div>` : ''}
       <div class="graph-legend"><span class="legend-item"><span class="line-sample exact"></span>At least one exact identity</span><span class="legend-item"><span class="line-sample dimension"></span>Shared dimension</span>${isDepartment ? '<span class="legend-item"><span class="person-key"></span>CA initials</span>' : '<span class="legend-item"><span class="person-key current"></span>Person in focus</span>'}</div>
     </section>
-    <div class="detail-panel"><strong>The rings are still here</strong><p class="small muted">Open My Ring to review visible and hidden placement, salience, and the details attached to each identity. Both web views stay people-only so the larger patterns remain readable.</p></div>`, { tabs: true, activeTab: 'web' });
+    <div class="detail-panel">${isInstructor()
+      ? '<strong>Looking at one CA</strong><p class="small muted">Tap any CA to open their focused network, then tap a connection line to compare two CAs side by side. Both web views stay people-only so the larger patterns remain readable.</p>'
+      : '<strong>The rings are still here</strong><p class="small muted">Open My Ring to review visible and hidden placement, salience, and the details attached to each identity. Both web views stay people-only so the larger patterns remain readable.</p>'}</div>`, { tabs: true, activeTab: 'web' });
   }
 
   function departmentConnections(profiles) {
@@ -957,7 +1012,32 @@
     if (layer) layer.setAttribute('transform', `translate(${state.graph.x} ${state.graph.y}) scale(${state.graph.scale})`);
   }
 
+  function cohortIdentities() {
+    const found = new Map();
+    departmentProfiles().forEach(profile => {
+      profile.identities.forEach(identity => {
+        const entry = found.get(identity.id) || { id: identity.id, category: identity.category, label: identity.label, holders: [] };
+        entry.holders.push(profile);
+        found.set(identity.id, entry);
+      });
+    });
+    return [...found.values()].sort((a, b) =>
+      b.holders.length - a.holders.length ||
+      categoryLabel(a.category).localeCompare(categoryLabel(b.category)) ||
+      a.label.localeCompare(b.label));
+  }
+
+  function renderInstructorIdentityHome() {
+    const entries = cohortIdentities();
+    const scope = state.filter === 'instructor' && instructorSection() ? 'your CAs' : 'Campus Living';
+    const cards = entries.map(entry => `<button class="deep-choice" type="button" data-action="open-identity" data-owner="${esc(normalizeEmail(entry.holders[0].email))}" data-id="${esc(entry.id)}">
+        <span class="check" aria-hidden="true">→</span><strong>${esc(entry.label)}</strong><p>${esc(categoryLabel(entry.category))}<br>${entry.holders.length} CA${entry.holders.length === 1 ? '' : 's'}</p>
+      </button>`).join('');
+    return shell(`<section class="screen-heading"><p class="eyebrow">Explore by identity</p><h1>Which identities are shared across ${esc(scope)}?</h1><p>${entries.length ? 'Choose an identity to see everyone connected through that specific identity or the broader dimension.' : 'No CAs have submitted an identity web in this scope yet.'}</p></section><div class="deep-grid">${cards}</div>`, { tabs: true, activeTab: 'explore' });
+  }
+
   function renderIdentityHome() {
+    if (isInstructor()) return renderInstructorIdentityHome();
     const profile = currentProfile();
     const cards = profile.identities.map(identity => {
       const connected = allProfiles().filter(peer => normalizeEmail(peer.email) !== normalizeEmail(profile.email) && peer.identities.some(item => item.category === identity.category));
@@ -1076,6 +1156,27 @@
         error.textContent = 'Enter a valid UB email ending in @buffalo.edu.';
         return;
       }
+      const account = instructorAccount(email);
+      if (account) {
+        state.instructorEmail = email;
+        state.currentEmail = email;
+        state.draft = null;
+        state.selectedOwnerEmail = null;
+        state.selectedPeerEmail = null;
+        state.graphFocusEmail = '';
+        state.graphIdentityFocus = null;
+        state.networkView = 'department';
+        // Open on their own CAs when they have a section, everyone otherwise.
+        state.filter = account.section ? 'instructor' : 'all';
+        state.matchMode = 'both';
+        state.placementMode = 'all';
+        state.graph = { scale: 1, x: 0, y: 0 };
+        state.view = 'web';
+        render();
+        return;
+      }
+
+      state.instructorEmail = '';
       const existing = allProfiles().find(profile => normalizeEmail(profile.email) === email);
       state.currentEmail = email;
       state.selectedOwnerEmail = email;
@@ -1196,7 +1297,8 @@
 
     if (view) {
       if (view === 'web') {
-        state.graphFocusEmail = state.currentEmail;
+        state.graphFocusEmail = isInstructor() ? '' : state.currentEmail;
+        if (isInstructor()) state.networkView = 'department';
         state.graphIdentityFocus = null;
         state.graph = { scale: 1, x: 0, y: 0 };
       }
@@ -1213,10 +1315,10 @@
       state.view = currentProfile() && state.currentEmail ? 'web' : 'welcome';
       render();
     } else if (action === 'switch-profile') {
-      state.view = 'welcome'; state.currentEmail = ''; state.draft = null; state.selectedOwnerEmail = null; state.selectedPeerEmail = null; state.graphFocusEmail = ''; state.graphIdentityFocus = null;
+      state.view = 'welcome'; state.currentEmail = ''; state.instructorEmail = ''; state.draft = null; state.selectedOwnerEmail = null; state.selectedPeerEmail = null; state.graphFocusEmail = ''; state.graphIdentityFocus = null; state.filter = 'all';
       render();
     } else if (action === 'demo') {
-      state.currentEmail = 'maya.chen@buffalo.edu'; state.selectedOwnerEmail = state.currentEmail; state.graphFocusEmail = state.currentEmail; state.graphIdentityFocus = null; state.draft = null; state.view = 'web';
+      state.instructorEmail = ''; state.currentEmail = 'maya.chen@buffalo.edu'; state.selectedOwnerEmail = state.currentEmail; state.graphFocusEmail = state.currentEmail; state.graphIdentityFocus = null; state.draft = null; state.view = 'web';
       render();
     } else if (action === 'cancel-profile') {
       state.view = 'welcome'; state.currentEmail = ''; state.draft = null;
@@ -1301,7 +1403,8 @@
       state.graph = { scale: 1, x: 0, y: 0 };
       render(false);
     } else if (action === 'return-my-web') {
-      state.graphFocusEmail = state.currentEmail;
+      state.graphFocusEmail = isInstructor() ? '' : state.currentEmail;
+      if (isInstructor()) state.networkView = 'department';
       state.graphIdentityFocus = null;
       state.graph = { scale: 1, x: 0, y: 0 };
       render(false);
@@ -1325,7 +1428,7 @@
     } else if (action === 'reset-graph') {
       state.graph = { scale: 1, x: 0, y: 0 }; setGraphTransform();
     } else if (action === 'show-all') {
-      state.filter = 'all'; state.matchMode = 'both'; state.placementMode = 'all'; state.graphFocusEmail = state.currentEmail; state.graphIdentityFocus = null; state.graph = { scale: 1, x: 0, y: 0 }; render(false);
+      state.filter = 'all'; state.matchMode = 'both'; state.placementMode = 'all'; state.graphFocusEmail = isInstructor() ? '' : state.currentEmail; state.graphIdentityFocus = null; state.graph = { scale: 1, x: 0, y: 0 }; render(false);
     }
   });
 

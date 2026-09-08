@@ -41,6 +41,27 @@ DNS: `identityweb.leep.life` points at GitHub's Pages addresses
 The demo cohort in `dist/app.js` (`seedProfiles`) is unchanged and still renders
 alongside real submissions.
 
+## Instructor access
+
+Instructors sign in on the same screen with their UB email. The app recognises
+them from `instructorAccounts` in `dist/app.js` and skips the assessment: they
+get a read-only stand-in profile, never a row in Supabase.
+
+What they see:
+
+- **Department Web** — the full network, opening on their own CAs when they have
+  a section. Tapping a CA opens that person's focused web; tapping a connection
+  line compares two CAs.
+- **Explore** — every identity present across the CAs in scope, with counts,
+  linking through to everyone connected by it.
+
+`My Web` and `My Ring` are replaced, since an instructor has no ring of their
+own. Three accounts (Brian Haggerty, Chris Bragdon, Meegan Hunt) have no section
+of CAs, so their class filter is hidden and they see the whole department.
+
+To add or remove an instructor, edit `instructorAccounts` and redeploy. The
+`section` value must match the instructor name CAs pick on their own profile.
+
 ## A note on access
 
 There is no sign-in. Anyone with the URL can read every profile and can open or
