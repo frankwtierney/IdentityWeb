@@ -367,11 +367,22 @@ input::placeholder { color: #788697; }
 .department-graph .person-core { fill: var(--blue-dark); stroke-width: 2.5; }
 .department-graph .person-initials { font-size: 10px; letter-spacing: .02em; }
 .department-graph .person-name { font-size: 10.5px; font-weight: 700; }
+/* Level of detail. A node too small to read carries no text; as the reader
+   zooms in the name appears, then the initials inside the node. The stage's
+   data-detail is set on zoom, so this costs no redraw. */
+.department-graph .person-initials,
+.department-graph .person-name { transition: opacity .14s ease; }
+[data-detail="mid"] .department-graph .person-initials { opacity: 0; }
+[data-detail="far"] .department-graph .person-initials,
+[data-detail="far"] .department-graph .person-name { opacity: 0; }
+/* Thin the lines out when pulled right back, so the shape of the cohort reads
+   instead of a wall of ink. */
+[data-detail="far"] .department-graph .connection-line { opacity: calc(var(--edge-ink, .42) * .6); }
 /* The department view carries names and a whole cohort, so it needs more room
    on screen than a single CA's network does. */
 .graph-panel.department .graph-stage { min-height: 780px; }
-.department-graph .connection-line { stroke-width: 1.65; opacity: .42; }
-.department-graph .connection-line.dimension { opacity: .46; stroke-dasharray: 5 5; }
+.department-graph .connection-line { stroke-width: 1.65; opacity: var(--edge-ink, .42); }
+.department-graph .connection-line.dimension { opacity: var(--edge-ink, .46); stroke-dasharray: 5 5; }
 .department-graph .people-connection:hover .connection-line,
 .department-graph .people-connection:focus .connection-line { opacity: 1; stroke-width: 3; }
 

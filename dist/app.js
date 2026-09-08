@@ -218,7 +218,7 @@
     selectedPeerEmail: null,
     graphFocusEmail: '',
     graphIdentityFocus: null,
-    graph: { scale: 1, x: 0, y: 0 },
+    graph: { scale: 1, x: 0, y: 0, auto: true },
     graphPointers: new Map(),
     graphMoved: false
   };
@@ -232,6 +232,14 @@
     }
     return ((hash >>> 0) % 10000) / 10000;
   }
+
+  // Zoom 1 already fits the whole canvas into the panel, so there is nothing
+  // useful below it; the headroom that matters is upward, for reading a dense
+  // cluster in a large cohort.
+  const GRAPH_ZOOM_MIN = .9;
+  const GRAPH_ZOOM_MAX = 4.5;
+
+  function defaultGraphView() { return { scale: 1, x: 0, y: 0, auto: true }; }
 
   function slug(text) {
     return String(text).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -375,7 +383,7 @@
     const renderer = views[state.view] || renderWelcome;
     app.innerHTML = renderer();
     if (scroll) window.scrollTo({ top: 0, behavior: 'auto' });
-    if (state.view === 'web') requestAnimationFrame(setGraphTransform);
+    if (state.view === 'web') requestAnimationFrame(() => { frameGraph(); setGraphTransform(); });
   }
 
   function renderWelcome() {
@@ -756,7 +764,15 @@
 
   function departmentGraphSvg(profiles, edges) {
     const mobile = window.innerWidth < 640;
-    const view = mobile ? { width: 440, height: 760, cx: 220, cy: 380, r: 19 } : { width: 1100, height: 780, cx: 550, cy: 390, r: 22 };
+    // Give every cohort the same room per person rather than fitting everyone
+    // into one screen. A large web then runs past the edges and is panned,
+    // which reads far better than a hundred CAs squeezed into one view.
+    const growth = Math.max(1, Math.sqrt(profiles.length / 9));
+    const view = mobile
+      ? { width: Math.round(440 * growth), height: Math.round(760 * growth), r: 19 }
+      : { width: Math.round(1100 * growth), height: Math.round(780 * growth), r: 22 };
+    view.cx = view.width / 2;
+    view.cy = view.height / 2;
     const positions = departmentForceLayout(profiles, edges, view, mobile);
     const lines = edges.map((edge, index) => {
       const a = positions[edge.source];
@@ -781,9 +797,14 @@
       </g>`;
     }).join('');
     const people = profiles.map((profile, index) => departmentPerson(profile, positions[index], view.r)).join('');
-    return `<svg class="graph-svg department-graph" viewBox="0 0 ${view.width} ${view.height}" role="img" aria-labelledby="graph-title graph-desc">
+    // Every added CA multiplies the lines, not just the dots, so a fixed line
+    // opacity that reads well at a dozen CAs becomes a wall of ink at a
+    // hundred. Fade each line as the cohort grows, keeping the overall weight
+    // of ink roughly constant.
+    const edgeInk = Math.max(.07, Math.min(.42, 12 / Math.sqrt(Math.max(1, edges.length))));
+    return `<svg class="graph-svg department-graph" viewBox="0 0 ${view.width} ${view.height}" data-node-r="${view.r}" style="--edge-ink:${edgeInk.toFixed(3)}" role="img" aria-labelledby="graph-title graph-desc">
       <title id="graph-title">Campus Living department identity network</title>
-      <desc id="graph-desc">Every visible node is a CA, labeled by initials. Each line represents one or more identity connections between a pair of CAs.</desc>
+      <desc id="graph-desc">Every visible node is a CA, labeled by name and building. Each line represents one or more identity connections between a pair of CAs. Zoom in for more detail, or out to see the whole cohort.</desc>
       <g id="network-layer" transform="translate(${state.graph.x} ${state.graph.y}) scale(${state.graph.scale})">${lines}${people}</g>
     </svg>`;
   }
@@ -1079,6 +1100,46 @@
   function setGraphTransform() {
     const layer = document.getElementById('network-layer');
     if (layer) layer.setAttribute('transform', `translate(${state.graph.x} ${state.graph.y}) scale(${state.graph.scale})`);
+    applyGraphDetail();
+  }
+
+  // How large a node actually lands on screen, accounting for both the
+  // viewBox-to-panel fit and whatever the reader has zoomed to.
+  function graphNodeScreenSize() {
+    const stage = document.querySelector('[data-graph-stage]');
+    const svg = stage?.querySelector('svg');
+    if (!stage || !svg || !svg.viewBox?.baseVal?.width) return null;
+    const box = svg.viewBox.baseVal;
+    const fit = Math.min(stage.clientWidth / box.width, stage.clientHeight / box.height);
+    if (!fit) return null;
+    const radius = Number(svg.dataset.nodeR) || 22;
+    return { stage, svg, box, fit, diameter: radius * 2 * fit * state.graph.scale };
+  }
+
+  // Labels are worth showing only when they can be read. Below that, drop the
+  // initials, then the names, so a large cohort still reads as a shape while
+  // zoomed out and fills in detail as the reader moves closer.
+  function applyGraphDetail() {
+    const metrics = graphNodeScreenSize();
+    if (!metrics) return;
+    const detail = metrics.diameter < 15 ? 'far' : metrics.diameter < 31 ? 'mid' : 'near';
+    if (metrics.stage.dataset.detail !== detail) metrics.stage.dataset.detail = detail;
+  }
+
+  // Open the department web at a zoom where names are legible, even when that
+  // means the cohort runs past the edges and has to be panned. One squeezed
+  // view of everyone is worse than a readable view of part of it.
+  function frameGraph() {
+    const metrics = graphNodeScreenSize();
+    if (!metrics || !state.graph.auto) return;
+    if (!metrics.svg.classList.contains('department-graph')) return;
+    // Open just readable enough, not closer: a small cohort then fits entirely
+    // on screen, and only a large one has to be panned.
+    const readable = 32;
+    const scale = Math.max(1, Math.min(GRAPH_ZOOM_MAX, readable / (metrics.diameter / state.graph.scale)));
+    state.graph.scale = scale;
+    state.graph.x = metrics.box.width / 2 * (1 - scale);
+    state.graph.y = metrics.box.height / 2 * (1 - scale);
   }
 
   function cohortIdentities() {
@@ -1239,7 +1300,7 @@
         state.filter = account.section ? 'instructor' : 'all';
         state.matchMode = 'both';
         state.placementMode = 'all';
-        state.graph = { scale: 1, x: 0, y: 0 };
+        state.graph = defaultGraphView();
         state.view = 'web';
         render();
         return;
@@ -1342,13 +1403,13 @@
       state.filter = event.target.value;
       state.graphFocusEmail = state.currentEmail;
       state.graphIdentityFocus = null;
-      state.graph = { scale: 1, x: 0, y: 0 };
+      state.graph = defaultGraphView();
       render(false);
     }
     if (event.target.matches('[data-input="match-mode"]')) {
       state.matchMode = event.target.value;
       state.graphIdentityFocus = null;
-      state.graph = { scale: 1, x: 0, y: 0 };
+      state.graph = defaultGraphView();
       render(false);
     }
   });
@@ -1369,7 +1430,7 @@
         state.graphFocusEmail = isInstructor() ? '' : state.currentEmail;
         if (isInstructor()) state.networkView = 'department';
         state.graphIdentityFocus = null;
-        state.graph = { scale: 1, x: 0, y: 0 };
+        state.graph = defaultGraphView();
       }
       if (view === 'identity-home') {
         state.selectedOwnerEmail = state.currentEmail;
@@ -1433,7 +1494,7 @@
     } else if (action === 'submit-profile') {
       saveProfile(state.draft);
       state.draft = null;
-      state.filter = 'all'; state.matchMode = 'both'; state.graphFocusEmail = state.currentEmail; state.graphIdentityFocus = null; state.graph = { scale: 1, x: 0, y: 0 };
+      state.filter = 'all'; state.matchMode = 'both'; state.graphFocusEmail = state.currentEmail; state.graphIdentityFocus = null; state.graph = defaultGraphView();
       state.view = 'web';
       render();
     } else if (action === 'edit-profile') {
@@ -1444,12 +1505,12 @@
       state.networkView = target.dataset.value === 'department' ? 'department' : 'local';
       if (state.networkView === 'local' && !state.graphFocusEmail) state.graphFocusEmail = state.currentEmail;
       state.graphIdentityFocus = null;
-      state.graph = { scale: 1, x: 0, y: 0 };
+      state.graph = defaultGraphView();
       render(false);
     } else if (action === 'placement-filter') {
       state.placementMode = target.dataset.value;
       state.graphIdentityFocus = null;
-      state.graph = { scale: 1, x: 0, y: 0 };
+      state.graph = defaultGraphView();
       render(false);
     } else if (action === 'graph-identity') {
       state.graphIdentityFocus = { ownerEmail: target.dataset.owner, id: target.dataset.id };
@@ -1469,13 +1530,13 @@
       state.networkView = 'local';
       state.graphFocusEmail = target.dataset.email;
       state.graphIdentityFocus = null;
-      state.graph = { scale: 1, x: 0, y: 0 };
+      state.graph = defaultGraphView();
       render(false);
     } else if (action === 'return-my-web') {
       state.graphFocusEmail = isInstructor() ? '' : state.currentEmail;
       if (isInstructor()) state.networkView = 'department';
       state.graphIdentityFocus = null;
-      state.graph = { scale: 1, x: 0, y: 0 };
+      state.graph = defaultGraphView();
       render(false);
     } else if (['open-identity', 'ring-identity'].includes(action)) {
       state.selectedOwnerEmail = target.dataset.owner || state.currentEmail;
@@ -1491,13 +1552,13 @@
       state.selectedOwnerEmail = owner; state.selectedPeerEmail = peer; state.selectedIdentityId = identityId; state.view = 'compare';
       render();
     } else if (action === 'zoom-in') {
-      state.graph.scale = Math.min(2.2, state.graph.scale + .2); setGraphTransform();
+      state.graph.scale = Math.min(GRAPH_ZOOM_MAX, state.graph.scale + .2); state.graph.auto = false; setGraphTransform();
     } else if (action === 'zoom-out') {
-      state.graph.scale = Math.max(.65, state.graph.scale - .2); setGraphTransform();
+      state.graph.scale = Math.max(GRAPH_ZOOM_MIN, state.graph.scale - .2); state.graph.auto = false; setGraphTransform();
     } else if (action === 'reset-graph') {
-      state.graph = { scale: 1, x: 0, y: 0 }; setGraphTransform();
+      state.graph = defaultGraphView(); setGraphTransform();
     } else if (action === 'show-all') {
-      state.filter = 'all'; state.matchMode = 'both'; state.placementMode = 'all'; state.graphFocusEmail = isInstructor() ? '' : state.currentEmail; state.graphIdentityFocus = null; state.graph = { scale: 1, x: 0, y: 0 }; render(false);
+      state.filter = 'all'; state.matchMode = 'both'; state.placementMode = 'all'; state.graphFocusEmail = isInstructor() ? '' : state.currentEmail; state.graphIdentityFocus = null; state.graph = defaultGraphView(); render(false);
     }
   });
 
@@ -1536,7 +1597,7 @@
       const ratio = (svg?.viewBox?.baseVal?.width || stage.clientWidth) / stage.clientWidth;
       const dx = (event.clientX - previous.x) * ratio;
       const dy = (event.clientY - previous.y) * ratio;
-      if (Math.abs(dx) + Math.abs(dy) > 1) state.graphMoved = true;
+      if (Math.abs(dx) + Math.abs(dy) > 1) { state.graphMoved = true; state.graph.auto = false; }
       state.graph.x += dx;
       state.graph.y += dy;
     } else if (state.graphPointers.size === 2) {
@@ -1545,7 +1606,7 @@
       if (other) {
         const oldDistance = Math.hypot(previous.x - other.x, previous.y - other.y);
         const newDistance = Math.hypot(event.clientX - other.x, event.clientY - other.y);
-        if (oldDistance > 0) state.graph.scale = Math.max(.65, Math.min(2.2, state.graph.scale * (newDistance / oldDistance)));
+        if (oldDistance > 0) { state.graph.scale = Math.max(GRAPH_ZOOM_MIN, Math.min(GRAPH_ZOOM_MAX, state.graph.scale * (newDistance / oldDistance))); state.graph.auto = false; }
         state.graphMoved = true;
       }
     }
@@ -1565,7 +1626,8 @@
     const stage = event.target.closest('[data-graph-stage]');
     if (!stage) return;
     event.preventDefault();
-    state.graph.scale = Math.max(.65, Math.min(2.2, state.graph.scale + (event.deltaY < 0 ? .12 : -.12)));
+    state.graph.scale = Math.max(GRAPH_ZOOM_MIN, Math.min(GRAPH_ZOOM_MAX, state.graph.scale + (event.deltaY < 0 ? .12 : -.12)));
+    state.graph.auto = false;
     setGraphTransform();
   }, { passive: false });
 
