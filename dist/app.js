@@ -791,18 +791,22 @@
 
   function departmentForceLayout(profiles, edges, view, mobile) {
     const count = Math.max(1, profiles.length);
-    const orbit = Math.min(view.width, view.height) * (mobile ? .35 : .38);
+    // A large cohort shares so many dimensions that nearly every pair is linked.
+    // Those springs pull the whole graph into a ball, so bigger cohorts need
+    // proportionally more room before any single line can be followed.
+    const crowding = Math.min(1.9, Math.max(1, Math.sqrt(count / 8)));
+    const orbit = Math.min(view.width, view.height) * (mobile ? .38 : .43);
     const nodes = profiles.map((profile, index) => {
       const angle = -Math.PI / 2 + index * (Math.PI * 2 / count);
-      const band = count > 14 ? .58 + (index % 3) * .21 : 1;
+      const band = count > 14 ? .84 + (index % 3) * .08 : 1;
       return { x: view.cx + Math.cos(angle) * orbit * band, y: view.cy + Math.sin(angle) * orbit * band, vx: 0, vy: 0 };
     });
-    for (let step = 0; step < 150; step += 1) {
+    for (let step = 0; step < 260; step += 1) {
       edges.forEach(edge => {
         const a = nodes[edge.source], b = nodes[edge.target];
         let dx = b.x - a.x, dy = b.y - a.y;
         const distance = Math.max(1, Math.hypot(dx, dy));
-        const target = mobile ? 112 : 132;
+        const target = (mobile ? 112 : 132) * crowding;
         const pull = (distance - target) * .0028;
         dx /= distance; dy /= distance;
         a.vx += dx * pull; a.vy += dy * pull;
@@ -813,16 +817,16 @@
           const a = nodes[i], b = nodes[j];
           let dx = b.x - a.x, dy = b.y - a.y;
           const distance = Math.max(1, Math.hypot(dx, dy));
-          const minimum = view.r * 2 + (mobile ? 18 : 22);
-          const repel = 720 / (distance * distance) + Math.max(0, minimum - distance) * .075;
+          const minimum = view.r * 2 + (mobile ? 18 : 22) * crowding * 1.7;
+          const repel = 900 / (distance * distance) + Math.max(0, minimum - distance) * .14;
           dx /= distance; dy /= distance;
           a.vx -= dx * repel; a.vy -= dy * repel;
           b.vx += dx * repel; b.vy += dy * repel;
         }
       }
       nodes.forEach(node => {
-        node.vx += (view.cx - node.x) * .0008;
-        node.vy += (view.cy - node.y) * .0008;
+        node.vx += (view.cx - node.x) * (.0008 / crowding);
+        node.vy += (view.cy - node.y) * (.0008 / crowding);
         node.vx *= .79; node.vy *= .79;
         node.x += node.vx; node.y += node.vy;
         node.x = Math.max(view.r + 16, Math.min(view.width - view.r - 16, node.x));
@@ -852,9 +856,15 @@
       const c1 = { x: currentPos.x + dx * .34 + nx * bend, y: currentPos.y + dy * .34 + ny * bend };
       const c2 = { x: currentPos.x + dx * .66 + nx * bend, y: currentPos.y + dy * .66 + ny * bend };
       const path = `M ${currentPos.x} ${currentPos.y} C ${c1.x.toFixed(2)} ${c1.y.toFixed(2)}, ${c2.x.toFixed(2)} ${c2.y.toFixed(2)}, ${peerPos.x} ${peerPos.y}`;
-      return `<g class="people-connection" data-action="connection-line" data-key="${esc(key)}" role="button" tabindex="0" aria-label="${matches.length} identity connection${matches.length === 1 ? '' : 's'} between ${esc(profile.firstName)} and ${esc(peer.firstName)}. Open comparison.">
+      const mid = bezierPoint(currentPos, c1, c2, peerPos, .5);
+      const label = `${matches.length} identity connection${matches.length === 1 ? '' : 's'} between ${esc(profile.firstName)} and ${esc(peer.firstName)}. Open comparison.`;
+      return `<g class="people-connection" data-action="connection-line" data-key="${esc(key)}" role="button" tabindex="0" aria-label="${label}">
         <path class="connection-line ${lineType}" d="${path}"></path>
         <path class="connection-hit" d="${path}"></path>
+        <g class="connection-marker" data-action="midpoint" data-key="${esc(key)}" role="button" tabindex="0" aria-label="${label}">
+          <circle class="connection-node ${lineType}" cx="${mid.x.toFixed(2)}" cy="${mid.y.toFixed(2)}" r="6.5"></circle>
+          <circle class="connection-node-hit" cx="${mid.x.toFixed(2)}" cy="${mid.y.toFixed(2)}" r="15"></circle>
+        </g>
       </g>`;
     });
     const people = [graphPerson(profile, currentPos, true), ...peers.map((peer, index) => graphPerson(peer, peerPositions[index], false))].join('');

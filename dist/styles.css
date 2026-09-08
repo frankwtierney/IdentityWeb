@@ -357,6 +357,13 @@ input::placeholder { color: #788697; }
 .graph-svg .connection-hit { fill: none; stroke: transparent; stroke-width: 22; cursor: pointer; pointer-events: stroke; }
 .graph-svg .people-connection:hover .connection-line,
 .graph-svg .people-connection:focus .connection-line { opacity: 1; stroke-width: 3.4; }
+.graph-svg .connection-node { fill: white; stroke: var(--blue); stroke-width: 2.4; pointer-events: none; transition: r .16s ease, stroke-width .16s ease; }
+.graph-svg .connection-node.dimension { stroke: var(--teal); }
+.graph-svg .connection-node-hit { fill: transparent; cursor: pointer; }
+.graph-svg .connection-marker:hover .connection-node,
+.graph-svg .connection-marker:focus .connection-node { r: 8.5; stroke-width: 3.2; }
+.graph-svg .connection-marker:focus { outline: none; }
+.graph-svg .people-connection:hover .connection-node { stroke-width: 3.2; }
 .department-graph .person-core { fill: var(--blue-dark); stroke-width: 2.5; }
 .department-graph .person-initials { font-size: 10px; letter-spacing: .02em; }
 .department-graph .connection-line { stroke-width: 1.65; opacity: .42; }
